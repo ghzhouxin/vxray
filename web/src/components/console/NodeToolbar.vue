@@ -58,6 +58,7 @@ import { computed, ref, watch } from 'vue'
 import { Aim, CircleCheck, Delete, Refresh } from '@element-plus/icons-vue'
 import { useNodeStore, useOperationStore, useSubscriptionStore } from '@/stores'
 import { useNodeFilter } from '@/composables'
+import { ALL_OPTION_LABEL, ALL_OPTION_VALUE } from '@/constants'
 import IconButton from '@/components/IconButton.vue'
 import BaseSelect from '@/components/BaseSelect.vue'
 
@@ -82,7 +83,7 @@ const emit = defineEmits<{
 }>()
 
 const protocolOptions = computed(() => [
-  { label: '全部', value: '' },
+  { label: ALL_OPTION_LABEL, value: ALL_OPTION_VALUE },
   ...nodeStore.protocols
 ])
 
@@ -92,7 +93,7 @@ const selectedSubscriptionLabel = computed(() => {
 })
 
 const subscriptionSelectOptions = computed(() => [
-  { label: '全部', value: '' },
+  { label: ALL_OPTION_LABEL, value: ALL_OPTION_VALUE },
   ...subscriptions.value.map(s => ({ label: s.name, value: String(s.id) }))
 ])
 
@@ -113,7 +114,17 @@ const speedButtons = computed(() => [
 
 function onButtonClick(event: 'speed-test-retest' | 'speed-test-available' | 'delete-timeout') {
   activeSpeedAction.value = event
-  emit(event as 'speed-test-retest')
+  switch (event) {
+    case 'speed-test-retest':
+      emit('speed-test-retest')
+      break
+    case 'speed-test-available':
+      emit('speed-test-available')
+      break
+    case 'delete-timeout':
+      emit('delete-timeout')
+      break
+  }
 }
 </script>
 

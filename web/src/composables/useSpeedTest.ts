@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { useNodeStore, useOperationStore, useXrayStore } from '@/stores'
 import { nodeApi } from '@/api'
-import { NODE_REFRESH_INTERVAL, SPEED_TEST_STATUS_POLL_INTERVAL } from '@/constants'
+import { NODE_REFRESH_INTERVAL, SPEED_TEST_STATUS_POLL_INTERVAL, SPEED_TEST_FAILED } from '@/constants'
 import { handleError, msg } from '@/utils/message'
 import { SSERequestError } from '@/utils/sse'
 import { waitForProxyReady, withLoading } from '@/utils/async'
@@ -53,10 +53,10 @@ export function useSpeedTest(ctx: RefreshContext) {
       if (progress && operationStore.type === 'node_speedtest') {
         operationStore.applyProgress(progress)
         operationStore.clear()
-        await refreshConsoleAndNodes().catch(() => { /* 静默刷新，不干扰用户 */ })
+        await refreshConsoleAndNodes().catch(e => { console.warn(e); /* 静默刷新，不干扰用户 */ })
         await refreshLogsSilently()
       }
-    } catch { /* 静默刷新，不干扰用户 */ }
+    } catch (e) { console.warn(e); /* 静默刷新，不干扰用户 */ }
   }
 
   async function restoreSpeedTestStatus() {
@@ -88,10 +88,10 @@ export function useSpeedTest(ctx: RefreshContext) {
     } catch (error) {
       const runningStatus = getRunningSpeedTestStatus(error)
       if (runningStatus) { keepRestoredJob = true; restoreRunningJob(runningStatus, '已有测速任务执行中'); return }
-      await refreshConsoleAndNodes().catch(() => { /* 静默刷新，不干扰用户 */ }); await refreshLogsSilently()
-      const status = await nodeApi.getSpeedTestStatus().catch(() => null)
+      await refreshConsoleAndNodes().catch(e => { console.warn(e); /* 静默刷新，不干扰用户 */ }); await refreshLogsSilently()
+      const status = await nodeApi.getSpeedTestStatus().catch(e => { console.warn(e); return null })
       if (status?.running) { keepRestoredJob = true; restoreRunningJob(status, '测速仍在后台执行'); return }
-      handleError(error, '测速失败')
+      handleError(error, SPEED_TEST_FAILED)
     } finally {
       if (!keepRestoredJob) { operationStore.clear(); stopNodeRefresh() }
     }

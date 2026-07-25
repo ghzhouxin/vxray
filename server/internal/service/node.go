@@ -141,8 +141,12 @@ func (s *NodeService) SubscribeSpeedTestProgress() (<-chan dto.OperationProgress
 
 func (s *NodeService) runSpeedTestJob(selection NodeSpeedTestSelection, job *nodeSpeedTestJob) {
 	var op *OperationLog
+	var wrappedChan chan speedtest.Progress
 	defer func() {
 		if r := recover(); r != nil {
+			if wrappedChan != nil {
+				close(wrappedChan)
+			}
 			message := fmt.Sprintf("节点测速异常: %v", r)
 			if op != nil {
 				s.failSpeedTestOperation(op, "节点测速异常", map[string]any{"error": message})
@@ -198,7 +202,7 @@ func (s *NodeService) runSpeedTestJob(selection NodeSpeedTestSelection, job *nod
 		Nodes:   nodeInfos,
 	})
 
-	wrappedChan := s.createJobProgressWrapper(job, op)
+	wrappedChan = s.createJobProgressWrapper(job, op)
 	s.speedTest.TestNodes(toSpeedNodes(nodes), wrappedChan)
 }
 

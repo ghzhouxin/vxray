@@ -33,7 +33,7 @@ export function useConsoleRefresh(options: {
   async function refreshNodes() { await nodeStore.fetchNodes() }
   async function refreshConsoleAndNodes() { await Promise.all([refreshConsole(), refreshNodes()]) }
   /** 静默刷新日志：吞掉错误，用于后台自动刷新场景（不干扰用户） */
-  async function refreshLogsSilently() { await options.loadLogs(true).catch(() => {}) }
+  async function refreshLogsSilently() { await options.loadLogs(true).catch(e => console.warn(e)) }
 
   return {
     nodeSummary,

@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"v2ray-server/internal/constants"
 	"v2ray-server/internal/dto"
 	"v2ray-server/internal/model"
 	"v2ray-server/internal/service"
@@ -116,7 +117,11 @@ func (h *NodeHandler) streamSpeedTest(c *gin.Context) {
 			if !ok {
 				return
 			}
-			data, _ := json.Marshal(progress)
+			data, err := json.Marshal(progress)
+			if err != nil {
+				_ = h.services.Log.Error(constants.TagSpeedtest, "SSE 序列化失败", map[string]any{"error": err.Error()})
+				continue
+			}
 			if _, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data); err != nil {
 				return
 			}

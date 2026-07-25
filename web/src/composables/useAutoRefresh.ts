@@ -11,8 +11,12 @@ export function useAutoRefresh(
   let wasRunning = false
 
   function run() {
-    const result = fn()
-    if (result instanceof Promise) result.catch(e => { onError?.(e) })
+    try {
+      const result = fn()
+      if (result instanceof Promise) result.catch(e => { onError?.(e) })
+    } catch (e) {
+      onError?.(e)
+    }
   }
 
   function start() {

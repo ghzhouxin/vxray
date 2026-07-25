@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-	"time"
 
 	"v2ray-server/internal/api"
 	"v2ray-server/internal/config"
+	"v2ray-server/internal/constants"
 	"v2ray-server/internal/database"
 	"v2ray-server/internal/middleware"
 	"v2ray-server/internal/service"
@@ -91,7 +91,7 @@ func startServer(system config.SystemMeta, db *gorm.DB, services *service.Contai
 		return err
 	case sig := <-quit:
 		log.Printf("Shutting down server gracefully on %s...", sig)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), constants.ShutdownTimeout)
 		defer cancel()
 
 		shutdownErr := srv.Shutdown(ctx)

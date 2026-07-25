@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"v2ray-server/internal/constants"
 )
 
 type ProxySettings struct {
@@ -29,11 +31,11 @@ func NewManager() *Manager {
 	return &Manager{
 		settings: ProxySettings{
 			HTTPHost:  "127.0.0.1",
-			HTTPPort:  18889,
+			HTTPPort:  constants.ProxyHTTPPort,
 			HTTPSHost: "127.0.0.1",
-			HTTPSPort: 18889,
+			HTTPSPort: constants.ProxyHTTPPort,
 			SOCKSHost: "127.0.0.1",
-			SOCKSPort: 18888,
+			SOCKSPort: constants.ProxySOCKSPort,
 		},
 	}
 }

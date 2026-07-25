@@ -26,7 +26,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { Back, Check, CircleCheck, Operation, RefreshLeft } from '@element-plus/icons-vue'
 import { useXrayConfigStore } from '@/stores'
 import { CODEMIRROR_PARSE_TIMEOUT_MS, ICON_BUTTON_SIZE_SM } from '@/constants'
-import { formatJsonString } from '@/utils/formatters'
+import { formatJsonString, formatJsonError } from '@/utils/formatters'
 import { msg } from '@/utils/message'
 import AppDialog from '@/components/AppDialog.vue'
 import IconButton from '@/components/IconButton.vue'
@@ -173,19 +173,6 @@ function topLevelFoldRanges() {
   } while (cursor.nextSibling())
 
   return ranges
-}
-
-function formatJsonError(content: string, error: unknown) {
-  const message = error instanceof Error ? error.message : 'JSON 格式错误'
-  const match = /position (\d+)/i.exec(message)
-  if (!match) return message
-  const position = Number(match[1])
-  if (Number.isNaN(position) || position < 0) return message
-
-  const prefix = content.slice(0, position)
-  const line = prefix.split('\n').length
-  const column = position - prefix.lastIndexOf('\n')
-  return `${message} (第 ${line} 行，第 ${column} 列)`
 }
 
 watch(

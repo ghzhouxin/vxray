@@ -239,7 +239,7 @@ async function loadPageData() {
 
 function openNodeDetail(node: Node) { selectedNode.value = node; openModal('nodeDetail') }
 
-onMounted(() => { loadPageData().catch(e => handleError(e, 'loading main page data failed')) })
+onMounted(() => { loadPageData().catch(e => handleError(e, '加载主页面数据失败')) })
 onBeforeUnmount(() => { cleanupSpeedTest() })
 useAutoRefresh(() => xrayStore.fetchStatus(), STATUS_REFRESH_INTERVAL, { onError: e => handleError(e, '刷新状态失败') })
 </script>
@@ -281,7 +281,7 @@ useAutoRefresh(() => xrayStore.fetchStatus(), STATUS_REFRESH_INTERVAL, { onError
 }
 
 .console-header {
-  height: 50px;
+  height: var(--header-height);
   padding: 0 var(--spacing-lg);
   display: flex;
   align-items: center;

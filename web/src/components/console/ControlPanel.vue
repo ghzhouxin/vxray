@@ -159,7 +159,7 @@ defineEmits<{
 
 <style scoped>
 .control-pane {
-  width: 304px;
+  width: var(--control-pane-width);
   padding: var(--spacing-lg) var(--spacing-md);
   display: flex;
   flex-direction: column;

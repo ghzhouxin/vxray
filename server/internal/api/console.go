@@ -38,7 +38,10 @@ func (h *ConsoleHandler) Get(c *gin.Context) {
 	tags := h.services.Log.GetTags()
 	levels := h.services.Log.GetLevels()
 
-	ports, _ := h.services.Xray.GetXrayPorts()
+	ports, err := h.services.Xray.GetXrayPorts()
+	if err != nil {
+		_ = h.services.Log.Error(constants.TagXray, "获取 Xray 端口失败", map[string]any{"error": err.Error()})
+	}
 	proxy := dto.ProxyDTO{Enabled: h.services.Proxy.IsEnabled()}
 	if ports != nil {
 		proxy.HTTPPort = ports.HTTPPort

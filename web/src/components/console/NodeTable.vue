@@ -63,7 +63,7 @@ import { Aim, Delete, InfoFilled } from '@element-plus/icons-vue'
 import IconButton from '@/components/IconButton.vue'
 import { useOperationStore, useXrayStore } from '@/stores'
 import { formatTransportDetail, getLatencyClass, formatLatency } from '@/utils/formatters'
-import { NODE_ROW_HEIGHT, NODE_OVERSCAN, NODE_LOAD_MORE_THRESHOLD, NODE_VIEWPORT_HEIGHT_DEFAULT, ICON_BUTTON_SIZE_LG, ICON_BUTTON_SIZE_SM } from '@/constants'
+import { NODE_ROW_HEIGHT, NODE_OVERSCAN, NODE_LOAD_MORE_THRESHOLD, NODE_VIEWPORT_HEIGHT_DEFAULT, ICON_BUTTON_SIZE_SM } from '@/constants'
 import type { Node } from '@/types'
 
 const props = defineProps<{

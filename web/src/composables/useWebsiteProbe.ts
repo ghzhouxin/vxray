@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import { useNodeStore, useXrayStore } from '@/stores'
 import { handleError, msg } from '@/utils/message'
 import { waitForProxyReady } from '@/utils/async'
-import { PROBE_OK_RATIO } from '@/constants'
+import { PROBE_OK_RATIO, NO_AVAILABLE_NODE } from '@/constants'
 import type { RefreshContext } from '@/types'
 
 export function useWebsiteProbe(ctx: RefreshContext) {
@@ -15,7 +15,7 @@ export function useWebsiteProbe(ctx: RefreshContext) {
 
   async function runProbe() {
     if (probing.value) return
-    if (!nodeStore.nodes.length) { msg.warning('暂无可用节点'); return }
+    if (!nodeStore.nodes.length) { msg.warning(NO_AVAILABLE_NODE); return }
 
     probing.value = true
     showLogs()
@@ -24,7 +24,7 @@ export function useWebsiteProbe(ctx: RefreshContext) {
         .filter(n => n.latency > 0)
         .sort((a, b) => a.latency - b.latency)
 
-      if (!candidates.length) { msg.warning('暂无可用节点'); return }
+      if (!candidates.length) { msg.warning(NO_AVAILABLE_NODE); return }
 
       let bestOkCount = 0
       let bestNodeName = ''

@@ -35,3 +35,8 @@ export const ICON_BUTTON_SIZE_LG = '34px'
 export const ICON_BUTTON_SIZE_SM = '28px'
 
 export const DIALOG_WIDTH_DEFAULT = '550px'
+
+export const NO_AVAILABLE_NODE = '暂无可用节点'
+export const SPEED_TEST_FAILED = '测速失败'
+export const ALL_OPTION_LABEL = '全部'
+export const ALL_OPTION_VALUE = ''

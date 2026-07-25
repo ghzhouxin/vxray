@@ -35,8 +35,8 @@ func Init(path string) (*gorm.DB, error) {
 }
 
 func prepareNodeIndexes(db *gorm.DB) error {
-	const latencyRankExpr = `CASE WHEN latency >= 1 THEN 0 WHEN latency = 0 OR latency IS NULL THEN 1 ELSE 2 END`
-	if err := db.Exec(`UPDATE nodes SET latency_rank = ` + latencyRankExpr + ` WHERE latency_rank IS NULL OR latency_rank <> ` + latencyRankExpr).Error; err != nil {
+	const updateLatencyRankSQL = `UPDATE nodes SET latency_rank = CASE WHEN latency >= 1 THEN 0 WHEN latency = 0 OR latency IS NULL THEN 1 ELSE 2 END WHERE latency_rank IS NULL OR latency_rank <> CASE WHEN latency >= 1 THEN 0 WHEN latency = 0 OR latency IS NULL THEN 1 ELSE 2 END`
+	if err := db.Exec(updateLatencyRankSQL).Error; err != nil {
 		return fmt.Errorf("update nodes latency_rank: %w", err)
 	}
 	indexes := []string{

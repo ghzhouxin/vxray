@@ -49,3 +49,16 @@ export function formatJsonString(str: string, fallback?: string): string {
   try { return JSON.stringify(JSON.parse(str), null, 2) }
   catch { return fallback ?? str }
 }
+
+export function formatJsonError(content: string, error: unknown) {
+  const message = error instanceof Error ? error.message : 'JSON 格式错误'
+  const match = /position (\d+)/i.exec(message)
+  if (!match) return message
+  const position = Number(match[1])
+  if (Number.isNaN(position) || position < 0) return message
+
+  const prefix = content.slice(0, position)
+  const line = prefix.split('\n').length
+  const column = position - prefix.lastIndexOf('\n')
+  return `${message} (第 ${line} 行，第 ${column} 列)`
+}

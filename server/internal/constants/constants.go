@@ -1,5 +1,7 @@
 package constants
 
+import "time"
+
 const (
 	LatencyTimeout  = -1
 	LatencyUntested = 0
@@ -20,6 +22,14 @@ const (
 // 数据库常量
 const (
 	SQLiteBusyTimeoutMs = 5000
+)
+
+// 运行时常量
+const (
+	ShutdownTimeout    = 5 * time.Second
+	ClashTopNodesLimit = 50
+	ProxyHTTPPort      = 18889
+	ProxySOCKSPort     = 18888
 )
 
 // 日志标签常量

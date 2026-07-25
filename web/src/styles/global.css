@@ -53,6 +53,14 @@
   --row-height-xs: 24px;
   --row-height-xxs: 20px;
 
+  /* Size — Layout Dimensions */
+  --header-height: 50px;
+  --log-panel-height: 300px;
+  --control-pane-width: 304px;
+  --log-col-time: 54px;
+  --log-col-level: 38px;
+  --log-col-tag: 48px;
+
   /* Font */
   --font-lg: 16px;
   --font-md: 14px;

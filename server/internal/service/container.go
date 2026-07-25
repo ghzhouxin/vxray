@@ -78,6 +78,11 @@ func (c *Container) EnsureGeoFiles() {
 		return
 	}
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				_ = c.Log.Error(constants.TagGeo, "Geo 下载 panic", map[string]any{"error": fmt.Sprintf("%v", r)})
+			}
+		}()
 		_ = c.Log.Info(constants.TagGeo, "Geo 文件不存在，开始异步下载", nil)
 		if err := c.Geo.DownloadAll(c.ctx); err != nil {
 			if errors.Is(err, context.Canceled) {

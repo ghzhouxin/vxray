@@ -32,7 +32,7 @@
 import { computed } from 'vue'
 import { Download } from '@element-plus/icons-vue'
 import { useGeoStore } from '@/stores'
-import { ICON_BUTTON_SIZE_LG, ICON_BUTTON_SIZE_SM } from '@/constants'
+import { ICON_BUTTON_SIZE_LG } from '@/constants'
 import IconButton from '@/components/IconButton.vue'
 import { handleError, msg } from '@/utils/message'
 import { formatFileSize, formatTime } from '@/utils/formatters'

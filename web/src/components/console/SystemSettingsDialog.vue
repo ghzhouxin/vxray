@@ -25,7 +25,7 @@ import GeoFileManager from './GeoFileManager.vue'
 import { useSettingsStore } from '@/stores'
 import {
   SPEEDTEST_TIMEOUT_MIN, SPEEDTEST_TIMEOUT_MAX, SPEEDTEST_TIMEOUT_STEP,
-  SPEEDTEST_CONCURRENCY_MAX, SPEEDTEST_CONCURRENCY_STEP, ICON_BUTTON_SIZE_LG, ICON_BUTTON_SIZE_SM
+  SPEEDTEST_CONCURRENCY_MAX, SPEEDTEST_CONCURRENCY_STEP, ICON_BUTTON_SIZE_SM
 } from '@/constants'
 import { msg } from '@/utils/message'
 import AppDialog from '@/components/AppDialog.vue'

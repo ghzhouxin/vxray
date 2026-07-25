@@ -63,7 +63,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Delete, RefreshRight } from '@element-plus/icons-vue'
 import type { Log } from '@/types'
-import { ICON_BUTTON_SIZE_LG, ICON_BUTTON_SIZE_SM } from '@/constants'
+import { ICON_BUTTON_SIZE_SM, ALL_OPTION_LABEL, ALL_OPTION_VALUE } from '@/constants'
 import { formatClock } from '@/utils/formatters'
 import IconButton from '@/components/IconButton.vue'
 import BaseSelect from '@/components/BaseSelect.vue'
@@ -111,7 +111,7 @@ onMounted(() => nextTick(setupObserver))
 onBeforeUnmount(() => observer?.disconnect())
 
 const levelOptions = computed(() => [
-  { label: '全部', value: '' },
+  { label: ALL_OPTION_LABEL, value: ALL_OPTION_VALUE },
   ...props.levels.map(l => ({ label: l, value: l }))
 ])
 const levelCache = new WeakMap<Log, string>()
@@ -122,7 +122,7 @@ const viewLogs = computed(() =>
   }))
 )
 const tagOptions = computed(() => [
-  { label: '全部', value: '' },
+  { label: ALL_OPTION_LABEL, value: ALL_OPTION_VALUE },
   ...props.tags.map(t => ({ label: t, value: t }))
 ])
 const levelLabel = computed(() => props.level ? levelOptions.value.find(item => item.value === props.level)?.label || '等级' : '等级')
@@ -153,7 +153,7 @@ function handleHeaderClick() {
   right: 0;
   bottom: 0;
   z-index: 30;
-  height: 300px;
+  height: var(--log-panel-height);
   overflow: visible;
   background: var(--bg-input);
   border-top: 1px solid var(--border-soft);
@@ -285,7 +285,7 @@ function handleHeaderClick() {
 
 .log-line {
   display: grid;
-  grid-template-columns: 54px 38px 48px 1fr;
+  grid-template-columns: var(--log-col-time) var(--log-col-level) var(--log-col-tag) 1fr;
   gap: var(--spacing-sm);
   padding: var(--spacing-xs) 0;
   align-items: start;

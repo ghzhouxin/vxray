@@ -2,6 +2,7 @@ import { useGeoStore, useNodeStore, useProxyStore, useSettingsStore, useXrayConf
 import { useActionExecutor } from './useActionExecutor'
 import { handleError, msg } from '@/utils/message'
 import { waitForProxyReady } from '@/utils/async'
+import { NO_AVAILABLE_NODE, SPEED_TEST_FAILED } from '@/constants'
 import { ElMessageBox } from 'element-plus'
 import type { RefreshContext } from '@/types'
 import type { ModalName } from './useModalState'
@@ -34,10 +35,11 @@ export function useConsoleHandlers(ctx: ConsoleActionContext) {
   async function handleSpeedTest() {
     if (xrayStore.speedTesting) { msg.warning('网站测速进行中'); return }
     if (!xrayStore.isRunning || !xrayStore.currentNode) {
-      const candidate = xrayStore.currentNode
-        ? nodeStore.nodes.find(n => n.id === xrayStore.currentNode!.id)
+      const current = xrayStore.currentNode
+      const candidate = current
+        ? nodeStore.nodes.find(n => n.id === current.id)
         : nodeStore.nodes.find(n => n.latency > 0)
-      if (!candidate) { msg.warning('暂无可用节点'); return }
+      if (!candidate) { msg.warning(NO_AVAILABLE_NODE); return }
       await execute(() => nodeStore.activateNode(candidate.id), {
         refreshAfterAction: refreshConsoleAndNodes, showLogsBefore: true,
         errorMsg: '激活节点失败'
@@ -46,7 +48,7 @@ export function useConsoleHandlers(ctx: ConsoleActionContext) {
     }
     await execute(() => xrayStore.runSpeedTestMulti(), {
       refreshAfterAction: refreshConsole, showLogsBefore: true,
-      successMsg: '网站测速完成', errorMsg: '测速失败'
+      successMsg: '网站测速完成', errorMsg: SPEED_TEST_FAILED
     })
   }
 

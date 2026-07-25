@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"v2ray-server/internal/constants"
 	"v2ray-server/internal/service"
 )
 
@@ -14,7 +15,7 @@ func NewClashHandler(services *service.Container) *ClashHandler {
 }
 
 func (h *ClashHandler) Subscription(c *gin.Context) {
-	nodes, err := h.services.Node.GetTopNodes(50)
+	nodes, err := h.services.Node.GetTopNodes(constants.ClashTopNodesLimit)
 	if handleError(c, err) {
 		return
 	}
