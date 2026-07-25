@@ -1,0 +1,122 @@
+name: Release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            target: darwin-arm64
+          - os: ubuntu-latest
+            target: linux-amd64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache-dependency-path: server/go.sum
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build Backend
+        run: |
+          cd server
+          go build -o vxray ./cmd
+
+      - name: Build Frontend
+        run: |
+          cd web
+          npm ci
+          npm run build
+
+      - name: Create Archive
+        run: |
+          mkdir -p dist/web
+          cp server/vxray dist/
+          cp -r web/dist/* dist/web/
+          tar -czvf vxray-${{ matrix.target }}.tar.gz -C dist .
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vxray-${{ matrix.target }}
+          path: vxray-${{ matrix.target }}.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/**/vxray-*.tar.gz
+          generate_release_notes: true
+
+  update-homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Calculate SHA256
+        id: sha256
+        run: |
+          DARWIN_SHA=$(sha256sum artifacts/vxray-darwin-arm64/vxray-darwin-arm64.tar.gz | cut -d' ' -f1)
+          LINUX_SHA=$(sha256sum artifacts/vxray-linux-amd64/vxray-linux-amd64.tar.gz | cut -d' ' -f1)
+          echo "darwin_sha=${DARWIN_SHA}" >> $GITHUB_OUTPUT
+          echo "linux_sha=${LINUX_SHA}" >> $GITHUB_OUTPUT
+
+      - name: Checkout homebrew-vxray
+        uses: actions/checkout@v4
+        with:
+          repository: ghzhouxin/homebrew-vxray
+          token: ${{ secrets.REPO_TOKEN }}
+
+      - name: Update Formula
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          DARWIN_SHA="${{ steps.sha256.outputs.darwin_sha }}"
+          LINUX_SHA="${{ steps.sha256.outputs.linux_sha }}"
+
+          sed -i "s|version \".*\"|version \"${VERSION}\"|" vxray.rb
+          sed -i "/darwin-arm64\.tar\.gz/{n;s|sha256 \".*\"|sha256 \"${DARWIN_SHA}\"|}" vxray.rb
+          sed -i "/linux-amd64\.tar\.gz/{n;s|sha256 \".*\"|sha256 \"${LINUX_SHA}\"|}" vxray.rb
+          sed -i "s|releases/download/v[0-9.]*/vxray-darwin-arm64.tar.gz|releases/download/v${VERSION}/vxray-darwin-arm64.tar.gz|" vxray.rb
+          sed -i "s|releases/download/v[0-9.]*/vxray-linux-amd64.tar.gz|releases/download/v${VERSION}/vxray-linux-amd64.tar.gz|" vxray.rb
+
+      - name: Commit and Push
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          git add vxray.rb
+          git diff --cached --quiet || git commit -m "chore: update formula for v${VERSION}"
+          git tag -f "v${VERSION}"
+          git push
+          git push origin "v${VERSION}" --force

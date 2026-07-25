@@ -1,0 +1,19 @@
+<svg class="brand-icon" width="30" height="30" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <defs>
+    <linearGradient id="brandBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#A78BFA"/>
+      <stop offset="50%" stop-color="#7186F5"/>
+      <stop offset="100%" stop-color="#4DA3FF"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="30" height="30" rx="8" fill="url(#brandBg)"/>
+
+  <path d="M6 5L15 14.27L24 5" stroke="rgba(255,255,255,0.22)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M6 10L15 19.27L24 10" stroke="rgba(255,255,255,0.42)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M6 15L15 24.27L24 15" stroke="rgba(255,255,255,0.82)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <circle cx="6" cy="15" r="0.85" fill="rgba(255,255,255,0.82)"/>
+  <circle cx="24" cy="15" r="0.85" fill="rgba(255,255,255,0.82)"/>
+  <circle cx="15" cy="24.27" r="0.9" fill="rgba(255,255,255,0.86)"/>
+</svg>
