@@ -1,0 +1,488 @@
+/* ==========================================================
+ * Design Tokens
+ * ========================================================== */
+
+:root {
+  color-scheme: dark;
+
+  /* Background */
+  --bg-base: #111820;
+  --bg-secondary: #010409;
+  --bg-panel: #151e27;
+  --bg-input: #0f151c;
+  --bg-hover: rgba(255, 255, 255, .04);
+  --bg-active: rgba(127, 184, 255, .04);
+
+  /* Surface */
+  --surface: rgba(255, 255, 255, .016);
+
+  /* Text */
+  --text-primary: #e7edf4;
+  --text-secondary: #98a6b3;
+  --text-tertiary: #667585;
+  --text-placeholder: #5c6370;
+
+  /* Brand */
+  --primary: #7fb8ff;
+  --primary-light: rgba(127, 184, 255, 0.08);
+  --success: #76d39a;
+  --success-light: rgba(118, 211, 154, 0.08);
+  --warning: #e3bc66;
+  --warning-light: rgba(227, 188, 102, 0.08);
+  --danger: #ee7a83;
+  --danger-light: rgba(238, 122, 131, 0.08);
+
+  /* Border */
+  --border-color: rgba(48, 54, 61, 0.6);
+  --border-soft: rgba(224, 236, 248, .06);
+  --border-active: rgba(127, 184, 255, 0.2);
+
+  /* Shadow */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.6);
+
+  /* Radius */
+  --radius-xs: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* Size — Row Heights (统一行高系统) */
+  --row-height-lg: 44px;
+  --row-height: 34px;
+  --row-height-sm: 28px;
+  --row-height-xs: 24px;
+  --row-height-xxs: 20px;
+
+  /* Size — Layout Dimensions */
+  --header-height: 50px;
+  --log-panel-height: 300px;
+  --control-pane-width: 304px;
+  --log-col-time: 54px;
+  --log-col-level: 38px;
+  --log-col-tag: 48px;
+
+  /* Font */
+  --font-lg: 16px;
+  --font-md: 14px;
+  --font-sm: 13px;
+  --font-xs: 12px;
+  --weight-bold: 600;
+  --weight-medium: 500;
+  --weight-regular: 400;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Spacing */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+
+  /* ── Element Plus token mapping ── */
+
+  --el-bg-color: var(--bg-base);
+  --el-bg-color-page: var(--bg-secondary);
+  --el-bg-color-overlay: var(--bg-panel);
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-secondary);
+  --el-text-color-secondary: var(--text-tertiary);
+  --el-text-color-placeholder: var(--text-placeholder);
+  --el-border-color: var(--border-soft);
+  --el-fill-color: var(--surface);
+  --el-fill-color-light: var(--surface);
+  --el-mask-color: rgba(0, 0, 0, 0.8);
+  --el-box-shadow: var(--shadow-sm);
+  --el-color-primary: var(--primary);
+  --el-color-primary-light-3: #9acdff;
+  --el-color-primary-light-5: #5a9de8;
+  --el-color-primary-light-9: rgba(127, 184, 255, 0.08);
+  --el-color-success: var(--success);
+  --el-color-success-light-3: #90e0b0;
+  --el-color-success-light-9: rgba(118, 211, 154, 0.08);
+  --el-color-warning: var(--warning);
+  --el-color-warning-light-3: #ecd08a;
+  --el-color-warning-light-9: rgba(227, 188, 102, 0.08);
+  --el-color-danger: var(--danger);
+  --el-color-danger-light-3: #f49da3;
+  --el-color-danger-light-9: rgba(238, 122, 131, 0.08);
+  --el-transition-duration: .15s;
+  --el-transition-duration-fast: .1s;
+}
+
+/* ==========================================================
+ * Reset & Base
+ * ========================================================== */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+}
+
+/* ==========================================================
+ * Scrollbar
+ * ========================================================== */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-xs);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: var(--radius-xs);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
+/* ==========================================================
+ * Utility Classes
+ * ========================================================== */
+
+.latency-timeout {
+  color: var(--danger);
+  font-weight: var(--weight-bold);
+}
+
+.latency-error {
+  color: var(--danger);
+}
+
+.latency-fast {
+  color: var(--success);
+}
+
+.latency-slow {
+  color: var(--warning);
+}
+
+.latency-pending {
+  color: var(--text-tertiary);
+}
+
+.section-label {
+  font-size: var(--font-sm);
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-xs);
+}
+
+/* ==========================================================
+ * Element Plus Overrides
+ * ========================================================== */
+
+/* ── Input, Textarea, Select ── */
+
+.el-input__wrapper,
+.el-textarea__inner,
+.el-input-number .el-input__wrapper {
+  background: var(--bg-input) !important;
+  border: 1px solid var(--border-soft) !important;
+  box-shadow: none !important;
+  color: var(--text-primary) !important;
+}
+
+.el-input__wrapper {
+  border-radius: var(--radius-md);
+}
+
+.el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--border-color) inset;
+}
+.el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px var(--border-active) inset;
+}
+
+.el-input__inner {
+  color: var(--text-primary) !important;
+}
+
+.el-input__inner::placeholder {
+  color: var(--text-placeholder);
+  opacity: 0.6;
+}
+
+.el-textarea__inner {
+  border-radius: var(--radius-md) !important;
+}
+
+.el-textarea__inner:focus {
+  border-color: var(--border-active) !important;
+}
+
+.el-textarea__inner::placeholder {
+  color: var(--text-placeholder) !important;
+}
+
+.el-input-number {
+  --el-input-number-bg-color: var(--bg-input);
+}
+
+.el-input-number .el-input__wrapper {
+  background-color: var(--bg-input);
+}
+
+.el-input-number__decrease,
+.el-input-number__increase {
+  background: var(--bg-panel) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-tertiary) !important;
+}
+
+.el-input-number__decrease:hover,
+.el-input-number__increase:hover {
+  color: var(--primary) !important;
+}
+
+/* ── Overlay & Dialog ── */
+
+.el-overlay {
+  background-color: rgba(3, 7, 12, .74) !important;
+}
+
+.el-dialog {
+  background: var(--bg-panel) !important;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg) !important;
+  box-shadow: none !important;
+  min-width: 480px;
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
+.el-dialog__header {
+  height: var(--row-height) !important;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.el-dialog__title {
+  font-size: var(--font-md) !important;
+}
+
+.el-dialog__body {
+  color: var(--text-secondary);
+  padding: var(--spacing-md) var(--spacing-md) !important;
+  max-height: calc(90vh - var(--row-height) - var(--row-height-sm));
+  overflow-y: auto;
+  overflow-x: hidden;
+  overflow-wrap: anywhere;
+}
+
+.el-dialog__footer {
+  margin-right: 0 !important;
+  padding: var(--spacing-sm) var(--spacing-md) !important;
+  border-top: 1px solid var(--border-soft);
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+}
+
+/* ── Message ── */
+
+.el-message {
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-md);
+}
+
+.el-message--success {
+  background-color: var(--success-light);
+  border-color: var(--success);
+}
+
+.el-message--success .el-message__content {
+  color: var(--success);
+}
+
+.el-message--warning {
+  background-color: var(--warning-light);
+  border-color: var(--warning);
+}
+
+.el-message--warning .el-message__content {
+  color: var(--warning);
+}
+
+.el-message--error {
+  background-color: var(--danger-light);
+  border-color: var(--danger);
+}
+
+.el-message--error .el-message__content {
+  color: var(--danger);
+}
+
+/* ── Loading ── */
+
+.el-loading-mask {
+  background-color: rgba(1, 4, 9, 0.9);
+  backdrop-filter: blur(4px);
+}
+
+/* ── Popper & Tooltip ── */
+
+.el-popper,
+.el-tooltip__popper {
+  background: var(--bg-panel) !important;
+  border: 1px solid var(--border-soft) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--shadow-sm) !important;
+  max-width: 400px !important;
+  word-break: break-all !important;
+}
+
+.el-popper .el-popper__arrow::before {
+  border-color: var(--border-soft) !important;
+  background: var(--bg-panel) !important;
+}
+
+.el-popper.is-light {
+  background: var(--bg-panel) !important;
+  border-color: var(--border-soft) !important;
+}
+
+/* ── Form ── */
+
+.el-form-item {
+  margin-bottom: var(--spacing-md);
+}
+
+.el-form-item:last-child {
+  margin-bottom: 0;
+}
+
+.el-form-item__label {
+  color: var(--text-secondary) !important;
+  font-weight: var(--weight-medium);
+  font-size: var(--font-sm);
+  padding-bottom: var(--spacing-xs);
+}
+
+.el-form-item__content {
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.el-form--label-top .el-form-item__label {
+  padding-bottom: var(--spacing-xs);
+}
+
+/* ── Editable Card List（订阅管理 / 测速网站管理 共享样式）── */
+
+.manager {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.manager .toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.manager .list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  max-height: 50vh;
+  overflow: auto;
+}
+
+.manager .card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.manager .card.expanded {
+  border-color: var(--border-active);
+  background: var(--bg-active);
+}
+
+.manager .card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 0;
+}
+
+.manager .card-title {
+  font-size: var(--font-md);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.manager .card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  color: var(--text-tertiary);
+  font-size: var(--font-xs);
+}
+
+.manager .card-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+.manager .card-head + .card-body {
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--border-soft);
+}
+
+.manager .empty {
+  padding: var(--spacing-lg);
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: var(--font-xs);
+}
+
+/* ── Detail Grid（节点详情 / 运行时信息 共享样式）── */
+
+.detail-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.detail-grid > div {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: var(--spacing-md);
+  min-width: 0;
+  padding: var(--spacing-xs);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.detail-grid > div:last-child {
+  border-bottom: none;
+}
+
+.detail-grid span {
+  color: var(--text-tertiary);
+}

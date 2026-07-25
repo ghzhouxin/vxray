@@ -1,0 +1,42 @@
+export const API_BASE_URL = '/api'
+export const NODE_PAGE_SIZE = 120
+export const PROXY_READY_DELAY = 1000
+export const REQUEST_TIMEOUT = 300000
+export const STATUS_REFRESH_INTERVAL = 5000
+
+export const LOG_DEFAULT_PAGE_SIZE = 50
+export const LOG_REFRESH_INTERVAL = 2000
+
+export const SPEED_TEST_STATUS_POLL_INTERVAL = 1500
+export const NODE_REFRESH_INTERVAL = 2000
+export const MESSAGE_DURATION = 3000
+
+export const LATENCY_MEDIUM_THRESHOLD = 1000
+export const LATENCY_TIMEOUT = -1
+
+export const DEBOUNCE_MS = 300
+export const PROBE_OK_RATIO = 0.75
+
+export const NODE_ROW_HEIGHT = 44
+export const NODE_OVERSCAN = 8
+export const NODE_LOAD_MORE_THRESHOLD = 260
+export const NODE_VIEWPORT_HEIGHT_DEFAULT = 520
+
+export const TOOLTIP_SHOW_AFTER_MS = 2000
+export const CODEMIRROR_PARSE_TIMEOUT_MS = 1000
+
+export const SPEEDTEST_TIMEOUT_MIN = 1000
+export const SPEEDTEST_TIMEOUT_MAX = 30000
+export const SPEEDTEST_TIMEOUT_STEP = 1000
+export const SPEEDTEST_CONCURRENCY_MAX = 200
+export const SPEEDTEST_CONCURRENCY_STEP = 10
+
+export const ICON_BUTTON_SIZE_LG = '34px'
+export const ICON_BUTTON_SIZE_SM = '28px'
+
+export const DIALOG_WIDTH_DEFAULT = '550px'
+
+export const NO_AVAILABLE_NODE = '暂无可用节点'
+export const SPEED_TEST_FAILED = '测速失败'
+export const ALL_OPTION_LABEL = '全部'
+export const ALL_OPTION_VALUE = ''

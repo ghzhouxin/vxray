@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+output/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# IDE
+.trae/
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Other
+data/
+.superpowers/
