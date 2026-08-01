@@ -2,30 +2,36 @@ package config
 
 import (
 	"sync"
-
-	"v2ray-server/internal/repository"
-
-	"gorm.io/gorm"
 )
+
+// SettingStore 抽象设置读写,由 repository 层实现并注入。
+type SettingStore interface {
+	Get(key string, dest any) error
+	Set(key string, value any) error
+}
 
 type State struct {
 	system       SystemMeta
 	settings     UserSettings
 	activeNodeID uint
 	mu           sync.RWMutex
-	settingRepo  *repository.SettingRepository
+	store        SettingStore
 }
 
 func LoadSystemMeta() SystemMeta {
-	return loadSystemMeta()
+	home := resolveHome()
+	system := buildSystemMeta(home)
+	applySystemOverrides(&system)
+	return system
 }
 
-func Load(db *gorm.DB) (*State, error) {
-	system := loadSystemMeta()
+// Load 接收已构造的 SettingStore,不再自行创建 repository。
+func Load(store SettingStore) (*State, error) {
+	system := LoadSystemMeta()
 
 	state := &State{
-		system:      system,
-		settingRepo: repository.NewSettingRepository(db),
+		system: system,
+		store:  store,
 	}
 
 	if err := state.loadSettings(); err != nil {
@@ -49,7 +55,7 @@ func (s *State) loadSettings() error {
 }
 
 func (s *State) loadSettingKeySilent(key string, dest any) bool {
-	err := s.settingRepo.Get(key, dest)
+	err := s.store.Get(key, dest)
 	return err == nil
 }
 

@@ -78,10 +78,8 @@ func extractURLsFromLine(line string) []string {
 	return urls
 }
 
-// findNextURLBounds locates the next URL in s, returning its [start, end) byte offsets.
-// Returns start == -1 if no URL is found. The URL extends from the protocol prefix
-// until whitespace, the next protocol prefix, or end of string. '#' triggers inclusion
-// of the rest of the string (fragment is part of the URL).
+// findNextURLBounds 找出 s 中下一个 URL 的 [start, end) 字节偏移。
+// URL 从协议前缀延伸到空白、下一个协议前缀或字符串末尾；# 触发包含剩余部分（fragment 属于 URL）
 func findNextURLBounds(s string) (start, end int) {
 	start, protocol := findEarliestProtocol(s)
 	if start == -1 {

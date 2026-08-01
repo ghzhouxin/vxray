@@ -1,7 +1,6 @@
 import type { LogListResponse } from './logs'
 import type { Node, ProtocolOption } from './node'
 import type { Subscription } from './subscription'
-import type { WebsiteSpeedTestResult } from './xray'
 
 export type { ProtocolOption } from './node'
 
@@ -31,7 +30,6 @@ export interface ConsoleSnapshot {
     }
     current_node?: Node
   }
-  speedtest_targets: WebsiteSpeedTestResult[]
   subscriptions: Subscription[]
   protocols: ProtocolOption[]
   logs: LogListResponse

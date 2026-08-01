@@ -33,8 +33,12 @@ type PathsMetaDTO struct {
 }
 
 type SpeedTestTargetDTO struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	Name     string `json:"name"`
+	URL      string `json:"url"`
+	Icon     string `json:"icon,omitempty"`
+	Latency  int64  `json:"latency"`
+	Error    string `json:"error,omitempty"`
+	TestedAt int64  `json:"tested_at,omitempty"`
 }
 
 type SpeedTestDTO struct {

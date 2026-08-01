@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"v2ray-server/internal/config"
 	"v2ray-server/internal/constants"
@@ -17,13 +18,13 @@ import (
 
 type geoConfig struct{ cfg *config.State }
 
-func (c geoConfig) GetGeoIPPath() string { return c.cfg.SystemMeta().Paths.GeoIP }
-func (c geoConfig) GetGeoSitePath() string {
+func (c geoConfig) GeoIPPath() string { return c.cfg.SystemMeta().Paths.GeoIP }
+func (c geoConfig) GeoSitePath() string {
 	return c.cfg.SystemMeta().Paths.GeoSite
 }
-func (c geoConfig) GetGeoDir() string { return c.cfg.SystemMeta().Paths.GeoDir }
-func (c geoConfig) GetGeoUpdateURL() (string, string, bool) {
-	return c.cfg.GetGeoUpdateURL()
+func (c geoConfig) GeoDir() string { return c.cfg.SystemMeta().Paths.GeoDir }
+func (c geoConfig) GeoUpdateURL() (string, string, bool) {
+	return c.cfg.GeoUpdateURL()
 }
 
 type Container struct {
@@ -52,7 +53,10 @@ func Init(db *gorm.DB, cfg *config.State) (*Container, error) {
 	subSvc := NewSubscriptionService(db, logSvc, nodeRepo)
 	xraySvc := NewXrayService(nodeRepo, cfg, logSvc)
 	nodeSvc := NewNodeService(xraySvc, nodeRepo, cfg, logSvc)
-	proxyMgr := proxy.NewManager()
+	proxyMgr := proxy.NewManager(proxy.Options{
+		HTTPPort:  constants.ProxyHTTPPort,
+		SOCKSPort: constants.ProxySOCKSPort,
+	})
 	geoMgr := geo.NewManager(geoConfig{cfg: cfg})
 
 	xraySvc.GetManager().SetLogCallback(func(level, message string) {
@@ -60,7 +64,7 @@ func Init(db *gorm.DB, cfg *config.State) (*Container, error) {
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Container{
+	c := &Container{
 		Config:       cfg,
 		Log:          logSvc,
 		Subscription: subSvc,
@@ -70,7 +74,21 @@ func Init(db *gorm.DB, cfg *config.State) (*Container, error) {
 		Geo:          geoMgr,
 		ctx:          ctx,
 		cancel:       cancel,
-	}, nil
+	}
+
+	// TODO(v0.3.0): 删除此迁移清理逻辑(已迁移到 DB)
+	if home := cfg.SystemMeta().Home; home != "" {
+		oldCache := filepath.Join(home, "speedtest.cache.json")
+		if _, err := os.Stat(oldCache); err == nil {
+			if err := os.Remove(oldCache); err != nil {
+				_ = logSvc.Error(constants.TagSpeedtest, "清理旧 speedtest cache 失败", map[string]any{"error": err.Error()})
+			} else {
+				_ = logSvc.Info(constants.TagSpeedtest, "已清理旧 speedtest.cache.json", nil)
+			}
+		}
+	}
+
+	return c, nil
 }
 
 func (c *Container) EnsureGeoFiles() {

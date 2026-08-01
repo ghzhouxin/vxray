@@ -3,10 +3,11 @@ package config
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"v2ray-server/pkg/types"
@@ -15,13 +16,6 @@ import (
 
 //go:embed xray.config.default.json
 var embedded embed.FS
-
-type WebsiteSpeedTestResult struct {
-	Name    string `json:"name"`
-	URL     string `json:"url"`
-	Latency int64  `json:"latency"`
-	Error   string `json:"error,omitempty"`
-}
 
 func (s *State) ReadXrayConfig() (map[string]any, error) {
 	var cfg map[string]any
@@ -49,10 +43,10 @@ func (s *State) UpdateXrayConfig(updater func(map[string]any) error) error {
 	return s.WriteXrayConfig(cfg)
 }
 
-func (s *State) GetXrayConfigContent() (string, error) {
+func (s *State) XrayConfigContent() (string, error) {
 	data, err := os.ReadFile(s.SystemMeta().Paths.XrayConfigPath)
-	if os.IsNotExist(err) {
-		return s.GetDefaultXrayConfigContent()
+	if errors.Is(err, fs.ErrNotExist) {
+		return s.DefaultXrayConfigContent()
 	}
 	if err != nil {
 		return "", err
@@ -60,7 +54,7 @@ func (s *State) GetXrayConfigContent() (string, error) {
 	return string(data), nil
 }
 
-func (s *State) GetDefaultXrayConfigContent() (string, error) {
+func (s *State) DefaultXrayConfigContent() (string, error) {
 	cfg, err := loadDefaultXrayConfig()
 	if err != nil {
 		return "", err
@@ -89,7 +83,7 @@ type XrayPorts struct {
 	SOCKSPort int
 }
 
-func (s *State) GetXrayPorts() (*XrayPorts, error) {
+func (s *State) XrayPorts() (*XrayPorts, error) {
 	cfg, err := s.ReadXrayConfig()
 	if err != nil {
 		return nil, err
@@ -171,7 +165,6 @@ func deepCopyMap(src types.Map) types.Map {
 			return dst
 		}
 	}
-	// JSON 失败时回退到浅拷贝
 	dst := make(types.Map, len(src))
 	for k, v := range src {
 		dst[k] = v
@@ -179,10 +172,9 @@ func deepCopyMap(src types.Map) types.Map {
 	return dst
 }
 
-// normalizeWSSettings migrates deprecated wsSettings.headers.Host to the
-// top-level host field. xray-core v26 auto-migrates this in Build() with a
-// deprecation warning; normalizing here eliminates the warning and protects
-// against future removal. Idempotent: no-op for already-new-format data.
+// normalizeWSSettings 将废弃的 wsSettings.headers.Host 迁移到顶层 host 字段。
+// xray-core v26 在 Build() 中自动迁移并打印 deprecation 警告；此处预先迁移消除警告。
+// 幂等：已是新格式的数据不会受影响。
 func normalizeWSSettings(outbound types.Map) {
 	streamSettings, ok := outbound["streamSettings"].(types.Map)
 	if !ok {
@@ -220,7 +212,7 @@ func popHeaderHost(headers types.Map) (string, bool) {
 	return "", false
 }
 
-func (s *State) GetActiveNodeID() uint {
+func (s *State) ActiveNodeID() uint {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.activeNodeID
@@ -232,7 +224,7 @@ func (s *State) SetActiveNodeID(id uint) {
 	s.activeNodeID = id
 }
 
-func (s *State) GetGeoUpdateURL() (geoIP, geoSite string, ok bool) {
+func (s *State) GeoUpdateURL() (geoIP, geoSite string, ok bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -247,22 +239,6 @@ func (s *State) GetGeoUpdateURL() (geoIP, geoSite string, ok bool) {
 	return source.GeoIP, source.GeoSite, true
 }
 
-func (s *State) SaveWebsiteSpeedTestResults(results []WebsiteSpeedTestResult) error {
-	data := append([]WebsiteSpeedTestResult(nil), results...)
-	return utils.WriteJSON(s.websiteSpeedTestCachePath(), data)
-}
-
-func (s *State) GetWebsiteSpeedTestResults() ([]WebsiteSpeedTestResult, error) {
-	var results []WebsiteSpeedTestResult
-	if err := utils.ReadJSON(s.websiteSpeedTestCachePath(), &results); err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read speedtest cache: %w", err)
-	}
-	return append([]WebsiteSpeedTestResult(nil), results...), nil
-}
-
 func (s *State) ensureXrayConfig() error {
 	system := s.SystemMeta()
 	if _, err := exec.LookPath(system.Xray.Binary); err != nil {
@@ -275,8 +251,4 @@ func (s *State) ensureXrayConfig() error {
 		return fmt.Errorf("read embedded xray config: %w", err)
 	}
 	return utils.EnsureFile(path, data)
-}
-
-func (s *State) websiteSpeedTestCachePath() string {
-	return filepath.Join(s.SystemMeta().Home, "speedtest.cache.json")
 }

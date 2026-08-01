@@ -1,5 +1,5 @@
 import request from '@/utils/request'
-import type { XrayStatusResponse, WebsiteSpeedTestResult } from '@/types'
+import type { XrayStatusResponse } from '@/types'
 
 const BASE = '/xray'
 
@@ -10,5 +10,5 @@ export const xrayApi = {
   getConfig: () => request.get<{ content: string }>(`${BASE}/config`),
   saveConfig: (content: string) => request.put(`${BASE}/config`, { content }),
   getDefaultConfig: () => request.get<{ content: string }>(`${BASE}/config/default`),
-  speedTestWebsites: () => request.post<WebsiteSpeedTestResult[]>(`${BASE}/speedtest/websites`)
+  speedTestWebsites: () => request.post(`${BASE}/speedtest/websites`)
 }

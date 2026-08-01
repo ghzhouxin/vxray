@@ -68,14 +68,12 @@ func (n *ParsedNode) IdentityKey() string {
 }
 
 const (
-	ProtocolVMess        = "vmess"
-	ProtocolVLESS        = "vless"
-	ProtocolTrojan       = "trojan"
-	ProtocolShadowsocks  = "shadowsocks"
-	ProtocolShadowsocksR = "shadowsocksr"
+	ProtocolVMess       = "vmess"
+	ProtocolVLESS       = "vless"
+	ProtocolTrojan      = "trojan"
+	ProtocolShadowsocks = "shadowsocks"
 )
 
-// ProtocolLabel 将协议原始值转为展示名（shadowsocks → SS，其他大写）
 func ProtocolLabel(protocol string) string {
 	if protocol == ProtocolShadowsocks {
 		return "SS"

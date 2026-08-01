@@ -25,7 +25,6 @@
           v-for="row in visibleRows"
           :key="row.id"
           :class="{ active: isCurrent(row) }"
-          data-log-keep-open
           @click="emit('use-node', row)"
         >
           <td :title="row.name">

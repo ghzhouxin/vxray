@@ -36,6 +36,7 @@
 
     <main class="console-main">
       <ControlPanel
+        ref="controlPanelRef"
         :logs-visible="!logsCollapsed"
         :speed-test-disabled="autoSpeedTestPending"
         :probing="websiteProbing"
@@ -54,14 +55,16 @@
 
       <div class="work-pane">
         <NodeToolbar
-        :subscription-updating="updatingAllSubscriptions"
-        :delete-loading="deletingFailedNodes"
-        @update-all-subscriptions="handleUpdateAllSubscriptions"
-        @speed-test-retest="handleRetestTimeout"
-        @speed-test-available="handleSpeedTestAvailable"
-        @delete-timeout="handleDeleteFailed"
-      />
+          ref="nodeToolbarRef"
+          :subscription-updating="updatingAllSubscriptions"
+          :delete-loading="deletingFailedNodes"
+          @update-all-subscriptions="handleUpdateAllSubscriptions"
+          @speed-test-retest="handleRetestTimeout"
+          @speed-test-available="handleSpeedTestAvailable"
+          @delete-timeout="handleDeleteFailed"
+        />
         <NodeTable
+          ref="nodeTableRef"
           :nodes="nodeStore.nodes"
           :loading="nodeStore.loading"
           :loading-more="nodeStore.loadingMore"
@@ -76,6 +79,7 @@
     </main>
 
     <LogPanel
+      ref="logPanelRef"
       v-model:collapsed="logsCollapsed"
       v-model:auto-refresh="logsAutoRefresh"
       v-model:level="logFilter.level"
@@ -108,7 +112,6 @@
 
     <SpeedTestTargetsDialog
       v-model="speedTestTargetsVisible"
-      @save="handleSaveUserSettings"
     />
 
     <XrayConfigDialog
@@ -119,7 +122,7 @@
 
     <RuntimeDialog
       v-model="runtimeVisible"
-      :system-meta="configStore.systemMeta"
+      :system-meta="settingsStore.systemMeta"
       :ports="runtimePorts"
     />
 
@@ -143,7 +146,7 @@ import SpeedTestTargetsDialog from '@/components/console/SpeedTestTargetsDialog.
 import SubscriptionManagerDialog from '@/components/console/SubscriptionManagerDialog.vue'
 import SystemSettingsDialog from '@/components/console/SystemSettingsDialog.vue'
 import XrayConfigDialog from '@/components/console/XrayConfigDialog.vue'
-import { useNodeStore, useSettingsStore, useXrayStore } from '@/stores'
+import { useNodeStore, useOperationStore, useSettingsStore, useXrayStore } from '@/stores'
 import { useAutoRefresh, useConsoleHandlers, useConsoleLogs, useConsoleRefresh, useModalState, useNodeActions, useSpeedTest, useSubscriptionManager, useWebsiteProbe } from '@/composables'
 import { STATUS_REFRESH_INTERVAL } from '@/constants'
 import { handleError } from '@/utils/message'
@@ -151,7 +154,13 @@ import type { Node } from '@/types'
 
 const xrayStore = useXrayStore()
 const nodeStore = useNodeStore()
-const configStore = useSettingsStore()
+const settingsStore = useSettingsStore()
+const operationStore = useOperationStore()
+
+const controlPanelRef = ref()
+const nodeToolbarRef = ref()
+const nodeTableRef = ref()
+const logPanelRef = ref()
 
 const {
   collapsed: logsCollapsed,
@@ -168,7 +177,12 @@ const {
   clearLogs,
   showLogs,
   handleConsoleClick
-} = useConsoleLogs()
+} = useConsoleLogs(() => [
+  controlPanelRef.value?.$el,
+  nodeToolbarRef.value?.$el,
+  nodeTableRef.value?.$el,
+  logPanelRef.value?.$el
+].filter((el): el is HTMLElement => Boolean(el)))
 
 const {
   nodeSummary, runtimePorts,
@@ -222,18 +236,22 @@ function toggleLogs() {
 }
 
 const matchKey = (code: string) => (e: KeyboardEvent) => e.altKey && e.code === code
-const preventDefault = (fn: () => void) => (e: KeyboardEvent) => { e.preventDefault(); fn() }
+const onKey = (fn: () => void, disabled?: () => boolean) => (e: KeyboardEvent) => {
+  e.preventDefault()
+  if (disabled?.()) return
+  fn()
+}
 
-onKeyStroke(matchKey('KeyG'), preventDefault(toggleLogs))
-onKeyStroke(matchKey('KeyT'), preventDefault(handleRetestTimeout))
-onKeyStroke(matchKey('KeyR'), preventDefault(handleWebsiteProbe))
-onKeyStroke(matchKey('KeyV'), preventDefault(handleSpeedTestAvailable))
-onKeyStroke(matchKey('KeyD'), preventDefault(handleDeleteFailed))
-onKeyStroke(matchKey('KeyS'), preventDefault(handleUpdateAllSubscriptions))
+onKeyStroke(matchKey('KeyG'), onKey(toggleLogs))
+onKeyStroke(matchKey('KeyT'), onKey(handleRetestTimeout, () => operationStore.running))
+onKeyStroke(matchKey('KeyR'), onKey(handleWebsiteProbe, () => xrayStore.speedTesting || autoSpeedTestPending.value || websiteProbing.value))
+onKeyStroke(matchKey('KeyV'), onKey(handleSpeedTestAvailable, () => operationStore.running))
+onKeyStroke(matchKey('KeyD'), onKey(handleDeleteFailed, () => deletingFailedNodes.value || operationStore.running))
+onKeyStroke(matchKey('KeyS'), onKey(handleUpdateAllSubscriptions, () => updatingAllSubscriptions.value || operationStore.running))
 
 async function loadPageData() {
   await refreshConsole()
-  await Promise.all([refreshNodes(), configStore.fetchConfigView()])
+  await Promise.all([refreshNodes(), settingsStore.fetchConfigView()])
   await restoreSpeedTestStatus()
 }
 

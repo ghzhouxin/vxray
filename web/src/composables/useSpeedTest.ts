@@ -1,11 +1,11 @@
 import { computed, ref } from 'vue'
 import { useNodeStore, useOperationStore, useXrayStore } from '@/stores'
-import { nodeApi } from '@/api'
 import { NODE_REFRESH_INTERVAL, SPEED_TEST_STATUS_POLL_INTERVAL, SPEED_TEST_FAILED } from '@/constants'
 import { handleError, msg } from '@/utils/message'
 import { SSERequestError } from '@/utils/sse'
-import { waitForProxyReady, withLoading } from '@/utils/async'
+import { waitForProxyReady } from '@/utils/async'
 import { useAutoRefresh } from './useAutoRefresh'
+import { useActionExecutor } from './useActionExecutor'
 import type { NodeFilterBase, NodeLatencyStatus, NodeSpeedTestStatus, Node, RefreshContext } from '@/types'
 
 export function useSpeedTest(ctx: RefreshContext) {
@@ -13,6 +13,7 @@ export function useSpeedTest(ctx: RefreshContext) {
   const operationStore = useOperationStore()
   const xrayStore = useXrayStore()
   const { refreshConsoleAndNodes, refreshLogsSilently, showLogs } = ctx
+  const { execute } = useActionExecutor(ctx)
 
   const autoSpeedTestPending = ref(false)
 
@@ -45,7 +46,7 @@ export function useSpeedTest(ctx: RefreshContext) {
 
   async function pollSpeedTestStatus() {
     try {
-      const status = await nodeApi.getSpeedTestStatus()
+      const status = await nodeStore.fetchSpeedTestStatus()
       const progress = status.progress || null
       if (status.running) { if (progress) operationStore.applyProgress(progress); return }
       stopStatusPolling()
@@ -60,7 +61,7 @@ export function useSpeedTest(ctx: RefreshContext) {
   }
 
   async function restoreSpeedTestStatus() {
-    const status = await nodeApi.getSpeedTestStatus()
+    const status = await nodeStore.fetchSpeedTestStatus()
     if (status.running) restoreRunningJob(status, '测速任务恢复中')
   }
 
@@ -89,7 +90,7 @@ export function useSpeedTest(ctx: RefreshContext) {
       const runningStatus = getRunningSpeedTestStatus(error)
       if (runningStatus) { keepRestoredJob = true; restoreRunningJob(runningStatus, '已有测速任务执行中'); return }
       await refreshConsoleAndNodes().catch(e => { console.warn(e); /* 静默刷新，不干扰用户 */ }); await refreshLogsSilently()
-      const status = await nodeApi.getSpeedTestStatus().catch(e => { console.warn(e); return null })
+      const status = await nodeStore.fetchSpeedTestStatus().catch(e => { console.warn(e); return null })
       if (status?.running) { keepRestoredJob = true; restoreRunningJob(status, '测速仍在后台执行'); return }
       handleError(error, SPEED_TEST_FAILED)
     } finally {
@@ -117,14 +118,20 @@ export function useSpeedTest(ctx: RefreshContext) {
   }
 
   async function triggerAutoSpeedTest() {
-    try {
-      await withLoading(autoSpeedTestPending, async () => {
+    await execute(
+      async () => {
         if (!xrayStore.speedTesting) {
           await waitForProxyReady()
           await xrayStore.runSpeedTestMulti()
         }
-      })
-    } catch (e) { handleError(e, '自动测速启动失败') }
+      },
+      {
+        refreshAfterAction: refreshConsoleAndNodes,
+        loading: autoSpeedTestPending,
+        errorMsg: '自动测速启动失败',
+        skipLogsRefresh: true
+      }
+    )
   }
 
   function cleanup() {

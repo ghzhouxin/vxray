@@ -25,8 +25,8 @@ export const formatClock = (time?: string) =>
 export function formatTransportDetail(node: { outbound_config?: OutboundConfig }): string {
   const streamSettings: StreamSettings | undefined = node.outbound_config?.streamSettings
   if (!streamSettings) return 'TCP'
-  const network = (streamSettings.network as string) || 'TCP'
-  const security = (streamSettings.security as string) || ''
+  const network = streamSettings.network || 'TCP'
+  const security = streamSettings.security || ''
   const parts = [network]
   if (security && security !== 'auto') parts.push(security)
   return parts.join('+')

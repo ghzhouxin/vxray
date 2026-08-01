@@ -6,9 +6,8 @@ import (
 	"v2ray-server/pkg/types"
 )
 
-// urlSuffixes lists protocol-name residue that may appear appended to node URLs
-// (e.g. "vmess://base64==vmess"). Short suffixes like "ss"/"ssr" are excluded
-// to avoid false-matching valid base64 payloads ending in those characters.
+// urlSuffixes 节点 URL 尾部可能追加的协议名残留（如 "vmess://base64==vmess"）
+// 排除 "ss"/"ssr" 等短串，避免误匹配 base64 payload 的合法结尾
 var urlSuffixes = []string{"vmess", "vless", "trojan", "🔗"}
 
 func CleanNodeURL(url string) string {
@@ -29,8 +28,6 @@ func CleanNodeURL(url string) string {
 	return strings.TrimSpace(url)
 }
 
-// removeInvalidSuffixes strips trailing protocol-name residue (e.g. "vmess://base64==vmess")
-// from the base part of a node URL. The fragment (after "#") is excluded by the caller.
 func removeInvalidSuffixes(s string) string {
 	for _, suffix := range urlSuffixes {
 		s = strings.TrimSuffix(s, suffix)

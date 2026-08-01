@@ -8,7 +8,7 @@ import type { ConsoleSnapshot, Log } from '@/types'
 
 const REFRESH_LOGS_ERROR = '刷新日志失败'
 
-export function useConsoleLogs() {
+export function useConsoleLogs(getSafeEls?: () => HTMLElement[]) {
   const collapsed = ref(true)
   const autoRefresh = ref(true)
   const logs = ref<Log[]>([])
@@ -38,13 +38,14 @@ export function useConsoleLogs() {
   watch(filter, debouncedLoadLogs, { deep: true })
 
   watch(collapsed, value => {
-    if (value) return stopRefresh()
+    if (value) { stopRefresh(); return }
     autoRefresh.value = true
-    loadLogs(true).catch(e => handleError(e, REFRESH_LOGS_ERROR))
-    syncRefresh()
+    loadLogs(true)
+      .then(() => syncRefresh())
+      .catch(e => handleError(e, REFRESH_LOGS_ERROR))
   })
 
-  watch(autoRefresh, () => { syncRefresh() })
+  watch(autoRefresh, () => syncRefresh())
 
   function applySnapshot(snapshot: ConsoleSnapshot) {
     logs.value = snapshot.logs.items
@@ -96,7 +97,7 @@ export function useConsoleLogs() {
   function handleConsoleClick(event: MouseEvent) {
     if (collapsed.value) return
     const target = event.target as HTMLElement | null
-    if (target && !target.closest('.log-panel, [data-log-keep-open]')) collapsed.value = true
+    if (target && !getSafeEls?.().some(el => el.contains(target))) collapsed.value = true
   }
 
   return {

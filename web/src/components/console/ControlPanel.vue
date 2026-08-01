@@ -4,7 +4,6 @@
       <IconButton
         :tooltip="xrayStore.isRunning ? '停止 Xray' : '启动 Xray'"
         :disabled="xrayStore.loading"
-        data-log-keep-open
         :tone="xrayStore.isRunning ? 'success' : 'primary'"
         :size="ICON_BUTTON_SIZE_LG"
         @click="$emit('toggle-power')"
@@ -17,7 +16,6 @@
         :disabled="proxyStore.proxyLoading"
         :tone="proxyStore.systemProxyEnabled ? 'success' : 'default'"
         :size="ICON_BUTTON_SIZE_LG"
-        data-log-keep-open
         @click="$emit('toggle-proxy')"
       >
         <Link />
@@ -27,7 +25,6 @@
         tooltip="日志面板 (Alt+G)"
         :tone="logsVisible ? 'primary' : 'default'"
         :size="ICON_BUTTON_SIZE_LG"
-        data-log-keep-open
         @click="$emit('toggle-logs')"
       >
         <Tickets />
@@ -45,7 +42,6 @@
             tooltip="管理测速网站"
             :size="ICON_BUTTON_SIZE_SM"
             tone="default"
-            data-log-keep-open
             @click="$emit('open-speedtest-targets')"
           >
             <Setting />
@@ -56,7 +52,6 @@
             tone="success"
             :disabled="xrayStore.speedTesting || speedTestDisabled || probing"
             :working="probing"
-            data-log-keep-open
             @click="$emit('website-probe')"
           >
             <Compass />
@@ -67,7 +62,6 @@
             tone="success"
             :disabled="xrayStore.speedTesting || speedTestDisabled || probing"
             :working="(xrayStore.speedTesting || speedTestDisabled) && !probing"
-            data-log-keep-open
             @click="$emit('speed-test')"
           >
             <Aim />
@@ -76,7 +70,7 @@
       </div>
       <div class="speed-grid">
         <div v-for="r in speedCells" :key="r.name" class="speed-cell">
-          <span>{{ r.name }}</span>
+          <AppIcon :src="r.icon" :name="r.name" :size="16" />
           <strong :class="r.latencyClass">{{ formatLatency(r.latency, xrayStore.speedTesting) }}</strong>
         </div>
       </div>
@@ -126,15 +120,22 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Aim, Compass, Connection, Document, InfoFilled, Link, Setting, Tickets, VideoPause, VideoPlay } from '@element-plus/icons-vue'
-import IconButton from '@/components/IconButton.vue'
-import { useProxyStore, useXrayStore } from '@/stores'
+import { useProxyStore, useSettingsStore, useXrayStore } from '@/stores'
 import { ICON_BUTTON_SIZE_LG, ICON_BUTTON_SIZE_SM } from '@/constants'
 import { getLatencyClass, formatLatency } from '@/utils/formatters'
+import AppIcon from '@/components/AppIcon.vue'
+import IconButton from '@/components/IconButton.vue'
 
 const xrayStore = useXrayStore()
 const proxyStore = useProxyStore()
+const settingsStore = useSettingsStore()
 
-const speedCells = computed(() => xrayStore.speedTestResults.map(r => ({ ...r, latencyClass: getLatencyClass(r.latency, !!r.error) })))
+const speedCells = computed(() =>
+  settingsStore.settings.speedtest.website_targets.map(r => ({
+    ...r,
+    latencyClass: getLatencyClass(r.latency, !!r.error)
+  }))
+)
 
 defineProps<{
   logsVisible: boolean

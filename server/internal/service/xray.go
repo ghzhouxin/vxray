@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"v2ray-server/internal/config"
 	"v2ray-server/internal/constants"
@@ -27,9 +28,9 @@ type XrayService struct {
 
 type xrayRuntimeConfig struct{ cfg *config.State }
 
-func (c xrayRuntimeConfig) GetXrayBinary() string     { return c.cfg.SystemMeta().Xray.Binary }
-func (c xrayRuntimeConfig) GetXrayConfigPath() string { return c.cfg.SystemMeta().Paths.XrayConfigPath }
-func (c xrayRuntimeConfig) GetGeoDir() string         { return c.cfg.SystemMeta().Paths.GeoDir }
+func (c xrayRuntimeConfig) XrayBinary() string     { return c.cfg.SystemMeta().Xray.Binary }
+func (c xrayRuntimeConfig) XrayConfigPath() string { return c.cfg.SystemMeta().Paths.XrayConfigPath }
+func (c xrayRuntimeConfig) GeoDir() string         { return c.cfg.SystemMeta().Paths.GeoDir }
 
 func NewXrayService(nodeRepo *repository.NodeRepository, cfg *config.State, logger *LogService) *XrayService {
 	return &XrayService{
@@ -50,10 +51,15 @@ func (s *XrayService) Stop() error {
 }
 func (s *XrayService) Status() bool               { return s.manager.IsRunning() }
 func (s *XrayService) GetManager() *xray.Manager  { return s.manager }
-func (s *XrayService) GetConfig() (string, error) { return s.cfg.GetXrayConfigContent() }
+func (s *XrayService) GetConfig() (string, error) { return s.cfg.XrayConfigContent() }
+
+// GetDefaultConfig 返回默认的 Xray 配置内容。
+func (s *XrayService) GetDefaultConfig() (string, error) {
+	return s.cfg.DefaultXrayConfigContent()
+}
 
 func (s *XrayService) SaveConfig(content string) error {
-	return s.logSvc.RunOperation(constants.TagSystem, "保存 Xray 配置", nil, func() error {
+	return s.logSvc.RunOperation(constants.TagXray, "保存 Xray 配置", nil, func() error {
 		var cfg map[string]any
 		if err := json.Unmarshal([]byte(content), &cfg); err != nil {
 			return fmt.Errorf("unmarshal xray config: %w", err)
@@ -63,7 +69,7 @@ func (s *XrayService) SaveConfig(content string) error {
 }
 
 func (s *XrayService) GetActiveNode() *model.Node {
-	nodeID := s.cfg.GetActiveNodeID()
+	nodeID := s.cfg.ActiveNodeID()
 	if nodeID == 0 {
 		return nil
 	}
@@ -102,16 +108,17 @@ func (s *XrayService) SetActiveNode(id uint, outbound types.Map) error {
 	return nil
 }
 
-func (s *XrayService) GetXrayPorts() (*config.XrayPorts, error) {
-	return s.cfg.GetXrayPorts()
+func (s *XrayService) XrayPorts() (*config.XrayPorts, error) {
+	return s.cfg.XrayPorts()
 }
 
-func (s *XrayService) SpeedTestWebsite(socksPort int) ([]config.WebsiteSpeedTestResult, error) {
+func (s *XrayService) SpeedTestWebsite(socksPort int) error {
 	s.logger.Info("开始网站测速", nil)
 
-	st := speedtest.New(s.cfg.UserSettings())
-	targets := s.cfg.UserSettings().SpeedTest.WebsiteTargets
-	results := make([]config.WebsiteSpeedTestResult, len(targets))
+	settings := s.cfg.UserSettings()
+	targets := settings.SpeedTest.WebsiteTargets
+	results := make([]config.SpeedTestTarget, len(targets))
+	now := time.Now().Unix()
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -121,37 +128,43 @@ func (s *XrayService) SpeedTestWebsite(socksPort int) ([]config.WebsiteSpeedTest
 			defer func() {
 				if r := recover(); r != nil {
 					mu.Lock()
-					results[idx] = config.WebsiteSpeedTestResult{
-						Name: t.Name, URL: t.URL,
+					results[idx] = config.SpeedTestTarget{
+						Name: t.Name, URL: t.URL, Icon: t.Icon,
 						Latency: -1, Error: fmt.Sprintf("website speedtest panic: %v", r),
+						TestedAt: now,
 					}
 					mu.Unlock()
 				}
 				wg.Done()
 			}()
+			st := speedtest.New(s.cfg.UserSettings())
 			result := st.TestWithProxyAndTarget(socksPort, t.URL)
 			mu.Lock()
-			results[idx] = config.WebsiteSpeedTestResult{
-				Name: t.Name, URL: t.URL,
+			results[idx] = config.SpeedTestTarget{
+				Name: t.Name, URL: t.URL, Icon: t.Icon,
 				Latency: result.Latency, Error: result.Error,
+				TestedAt: now,
 			}
 			mu.Unlock()
 		}(i, target)
 	}
 	wg.Wait()
+
+	// 只更新 WebsiteTargets,避免覆盖并发用户改动
+	if err := s.cfg.UpdateWebsiteTargets(results); err != nil {
+		s.logger.Error("保存网站测速结果到 DB 失败", map[string]any{"error": err.Error()})
+	}
+
 	failed := 0
 	for _, result := range results {
 		if result.Error != "" {
 			failed++
 		}
 	}
-	if err := s.cfg.SaveWebsiteSpeedTestResults(results); err != nil {
-		s.logger.Error("保存网站测速结果失败", map[string]any{"error": err.Error()})
-	}
 	s.logger.Info("网站测速完成", map[string]any{
 		"total":   len(results),
 		"success": len(results) - failed,
 		"failed":  failed,
 	})
-	return results, nil
+	return nil
 }

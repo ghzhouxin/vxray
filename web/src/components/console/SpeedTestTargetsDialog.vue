@@ -2,7 +2,7 @@
   <AppDialog :model-value="modelValue" title="测速网站管理" class="speedtest-targets-dialog" @update:model-value="emit('update:modelValue', $event)">
     <div class="manager">
       <div class="toolbar">
-        <IconButton label="添加网站" :size="ICON_BUTTON_SIZE_LG" tone="primary" :disabled="configStore.settingsSaving" @click="startCreate"><Plus /></IconButton>
+        <IconButton label="添加网站" :size="ICON_BUTTON_SIZE_LG" tone="primary" :disabled="settingsStore.settingsSaving" @click="startCreate"><Plus /></IconButton>
       </div>
 
       <div class="list">
@@ -11,28 +11,30 @@
             <strong class="card-title">新增网站</strong>
             <div class="card-actions">
               <IconButton label="取消" :size="ICON_BUTTON_SIZE_SM" tone="muted" @click="cancelEdit"><Close /></IconButton>
-              <IconButton label="保存" :size="ICON_BUTTON_SIZE_SM" tone="primary" :working="configStore.settingsSaving" :disabled="configStore.settingsSaving" @click="submit"><Check /></IconButton>
+              <IconButton label="保存" :size="ICON_BUTTON_SIZE_SM" tone="primary" :working="settingsStore.settingsSaving" :disabled="settingsStore.settingsSaving" @click="handleSubmit"><Check /></IconButton>
             </div>
           </div>
           <div class="card-body">
             <el-form :model="form" label-position="top">
               <el-form-item label="名称"><el-input v-model="form.name" /></el-form-item>
               <el-form-item label="URL"><el-input v-model="form.url" /></el-form-item>
+              <el-form-item label="图标 URL"><el-input v-model="form.icon" placeholder="留空则显示名称" /></el-form-item>
             </el-form>
           </div>
         </div>
 
         <div v-for="(target, idx) in targets" :key="target.url" class="card" :class="{ expanded: expandedKey === idx }">
           <div class="card-head">
+            <AppIcon :src="target.icon" :name="target.name" :size="18" />
             <strong class="card-title">{{ target.name }}</strong>
             <div class="card-actions">
               <template v-if="expandedKey === idx">
                 <IconButton label="取消" :size="ICON_BUTTON_SIZE_SM" tone="muted" @click="cancelEdit"><Close /></IconButton>
-                <IconButton label="保存" :size="ICON_BUTTON_SIZE_SM" tone="primary" :working="configStore.settingsSaving" :disabled="configStore.settingsSaving" @click="submit"><Check /></IconButton>
+                <IconButton label="保存" :size="ICON_BUTTON_SIZE_SM" tone="primary" :working="settingsStore.settingsSaving" :disabled="settingsStore.settingsSaving" @click="handleSubmit"><Check /></IconButton>
               </template>
               <template v-else>
-                <IconButton tooltip="编辑" :size="ICON_BUTTON_SIZE_SM" tone="muted" :disabled="configStore.settingsSaving" @click="handleStartEdit(idx)"><EditPen /></IconButton>
-                <IconButton tooltip="删除" :size="ICON_BUTTON_SIZE_SM" tone="danger" :disabled="configStore.settingsSaving" @click="handleDelete(idx)"><Delete /></IconButton>
+                <IconButton tooltip="编辑" :size="ICON_BUTTON_SIZE_SM" tone="muted" :disabled="settingsStore.settingsSaving" @click="handleStartEdit(idx)"><EditPen /></IconButton>
+                <IconButton tooltip="删除" :size="ICON_BUTTON_SIZE_SM" tone="danger" :disabled="settingsStore.settingsSaving" @click="handleDelete(idx)"><Delete /></IconButton>
               </template>
             </div>
           </div>
@@ -41,6 +43,7 @@
             <el-form :model="form" label-position="top">
               <el-form-item label="名称"><el-input v-model="form.name" /></el-form-item>
               <el-form-item label="URL"><el-input v-model="form.url" /></el-form-item>
+              <el-form-item label="图标 URL"><el-input v-model="form.icon" placeholder="留空则显示名称" /></el-form-item>
             </el-form>
           </div>
         </div>
@@ -56,15 +59,15 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Check, Close, Delete, EditPen, Plus } from '@element-plus/icons-vue'
-import type { UserSettings } from '@/types'
 import { useSettingsStore } from '@/stores'
 import { ICON_BUTTON_SIZE_LG, ICON_BUTTON_SIZE_SM } from '@/constants'
 import { msg } from '@/utils/message'
 import { useCardEditor } from '@/composables/useCardEditor'
 import AppDialog from '@/components/AppDialog.vue'
+import AppIcon from '@/components/AppIcon.vue'
 import IconButton from '@/components/IconButton.vue'
 
-type Target = UserSettings['speedtest']['website_targets'][number]
+type TargetForm = { name: string; url: string; icon: string }
 
 defineProps<{
   modelValue: boolean
@@ -72,40 +75,55 @@ defineProps<{
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
-  save: []
 }>()
 
-const configStore = useSettingsStore()
-const targets = computed(() => configStore.settings.speedtest.website_targets)
+const settingsStore = useSettingsStore()
+const targets = computed(() => settingsStore.settings.speedtest.website_targets)
 
-const { expandedKey, form, resetForm, startCreate, startEdit, cancelEdit } = useCardEditor<Target>({ name: '', url: '' })
+const { expandedKey, form, resetForm, startCreate, startEdit, cancelEdit } = useCardEditor<TargetForm>({ name: '', url: '', icon: '' })
 
 function handleStartEdit(idx: number) {
   const target = targets.value[idx]
-  startEdit(idx, { name: target.name, url: target.url })
+  startEdit(idx, { name: target.name, url: target.url, icon: target.icon || '' })
 }
 
-async function submit() {
+async function handleSubmit() {
   const name = form.name.trim()
   const url = form.url.trim()
+  const icon = (form.icon || '').trim()
   if (!name) { msg.warning('请输入名称'); return }
   if (!url) { msg.warning('请输入 URL'); return }
 
+  const previous = [...targets.value]
   const next = [...targets.value]
   if (expandedKey.value === 'new') {
-    next.push({ name, url })
+    next.push({ name, url, latency: 0, ...(icon ? { icon } : {}) })
   } else if (typeof expandedKey.value === 'number') {
-    next[expandedKey.value] = { name, url }
+    const existing = targets.value[expandedKey.value]
+    next[expandedKey.value] = { ...existing, name, url, icon: icon || undefined }
   }
-  configStore.settings.speedtest.website_targets = next
-  expandedKey.value = null
-  resetForm()
-  emit('save')
+  settingsStore.updateWebsiteTargets(next)
+  try {
+    await settingsStore.saveUserSettings()
+    expandedKey.value = null
+    resetForm()
+  } catch (e) {
+    settingsStore.settings.speedtest.website_targets = previous
+    console.warn('[SpeedTestTargetsDialog] 保存失败', e)
+    msg.error('保存失败')
+  }
 }
 
-function handleDelete(idx: number) {
-  configStore.settings.speedtest.website_targets = targets.value.filter((_, i) => i !== idx)
-  emit('save')
+async function handleDelete(idx: number) {
+  const previous = [...targets.value]
+  settingsStore.updateWebsiteTargets(targets.value.filter((_, i) => i !== idx))
+  try {
+    await settingsStore.saveUserSettings()
+  } catch (e) {
+    settingsStore.settings.speedtest.website_targets = previous
+    console.warn('[SpeedTestTargetsDialog] 删除失败', e)
+    msg.error('删除失败')
+  }
 }
 </script>
 

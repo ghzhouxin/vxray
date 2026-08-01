@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { useNodeStore, useXrayStore } from '@/stores'
+import { useNodeStore, useSettingsStore, useXrayStore } from '@/stores'
 import { handleError, msg } from '@/utils/message'
 import { waitForProxyReady } from '@/utils/async'
 import { PROBE_OK_RATIO, NO_AVAILABLE_NODE } from '@/constants'
@@ -8,6 +8,7 @@ import type { RefreshContext } from '@/types'
 export function useWebsiteProbe(ctx: RefreshContext) {
   const nodeStore = useNodeStore()
   const xrayStore = useXrayStore()
+  const settingsStore = useSettingsStore()
   const { refreshConsoleAndNodes, refreshLogsSilently, showLogs } = ctx
 
   const probing = ref(false)
@@ -38,7 +39,8 @@ export function useWebsiteProbe(ctx: RefreshContext) {
         await refreshLogsSilently()
         await waitForProxyReady()
 
-        const results = await xrayStore.runSpeedTestMulti()
+        await xrayStore.runSpeedTestMulti()
+        const results = settingsStore.settings.speedtest.website_targets
         const okCount = results.filter(r => r.latency > 0).length
         if (okCount > bestOkCount) { bestOkCount = okCount; bestNodeName = node.name }
 

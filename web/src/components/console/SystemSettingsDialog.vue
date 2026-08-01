@@ -1,18 +1,18 @@
 <template>
   <AppDialog :model-value="modelValue" title="系统设置" @update:model-value="emit('update:modelValue', $event)">
-    <div v-loading="configStore.loading" class="settings-panel">
-      <label>测速地址<el-input v-model="configStore.settings.speedtest.target_url" /></label>
-      <label>超时时间<el-input-number v-model="configStore.settings.speedtest.timeout" :min="SPEEDTEST_TIMEOUT_MIN" :max="SPEEDTEST_TIMEOUT_MAX" :step="SPEEDTEST_TIMEOUT_STEP" /></label>
-      <label>并发数量<el-input-number v-model="configStore.settings.speedtest.concurrency" :min="1" :max="SPEEDTEST_CONCURRENCY_MAX" :step="SPEEDTEST_CONCURRENCY_STEP" /></label>
+    <div v-loading="settingsStore.loading" class="settings-panel">
+      <label>测速地址<el-input v-model="settingsStore.settings.speedtest.target_url" /></label>
+      <label>超时时间<el-input-number v-model="settingsStore.settings.speedtest.timeout" :min="SPEEDTEST_TIMEOUT_MIN" :max="SPEEDTEST_TIMEOUT_MAX" :step="SPEEDTEST_TIMEOUT_STEP" /></label>
+      <label>并发数量<el-input-number v-model="settingsStore.settings.speedtest.concurrency" :min="1" :max="SPEEDTEST_CONCURRENCY_MAX" :step="SPEEDTEST_CONCURRENCY_STEP" /></label>
 
-      <label>Geo 来源<BaseSelect :model-value="configStore.settings.geo.selected_source" :options="geoSourceOptions" placeholder="Geo 来源" @update:model-value="v => configStore.settings.geo.selected_source = v" /></label>
+      <label>Geo 来源<BaseSelect :model-value="settingsStore.settings.geo.selected_source" :options="geoSourceOptions" placeholder="Geo 来源" @update:model-value="v => settingsStore.settings.geo.selected_source = v" /></label>
       <GeoFileManager />
     </div>
     <template #footer>
       <div class="settings-footer">
         <IconButton block label="重置" :size="ICON_BUTTON_SIZE_SM" tone="muted" @click="handleResetDefault"><RefreshLeft /></IconButton>
         <IconButton block label="取消" :size="ICON_BUTTON_SIZE_SM" tone="muted" @click="emit('update:modelValue', false)"><Close /></IconButton>
-        <IconButton block label="保存" :size="ICON_BUTTON_SIZE_SM" tone="primary" :working="configStore.settingsSaving" :disabled="configStore.settingsSaving" @click="emit('save')"><Check /></IconButton>
+        <IconButton block label="保存" :size="ICON_BUTTON_SIZE_SM" tone="primary" :working="settingsStore.settingsSaving" :disabled="settingsStore.settingsSaving" @click="emit('save')"><Check /></IconButton>
       </div>
     </template>
   </AppDialog>
@@ -41,12 +41,12 @@ const emit = defineEmits<{
   save: []
 }>()
 
-const configStore = useSettingsStore()
-const geoSourceNames = computed(() => Object.keys(configStore.systemMeta.assets.geo_sources || {}))
+const settingsStore = useSettingsStore()
+const geoSourceNames = computed(() => Object.keys(settingsStore.systemMeta.assets.geo_sources || {}))
 const geoSourceOptions = computed(() => geoSourceNames.value.map(name => ({ label: name, value: name })))
 
 function handleResetDefault() {
-  configStore.restoreDefaultUserSettings()
+  settingsStore.restoreDefaultUserSettings()
   msg.success('已恢复默认值，请保存以生效')
 }
 </script>

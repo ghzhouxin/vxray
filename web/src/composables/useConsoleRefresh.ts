@@ -16,7 +16,6 @@ export function useConsoleRefresh(options: {
 
   function applySnapshot(snapshot: ConsoleSnapshot) {
     xrayStore.applyConsoleSnapshot(snapshot)
-    xrayStore.applySpeedTestSnapshot(snapshot.speedtest_targets)
     subscriptionStore.setSubscriptions(snapshot.subscriptions)
     nodeStore.setProtocols(snapshot.protocols || [])
     proxyStore.setProxyStatus(snapshot.runtime.proxy.enabled)
@@ -32,7 +31,6 @@ export function useConsoleRefresh(options: {
   async function refreshConsole() { applySnapshot(await consoleApi.get()) }
   async function refreshNodes() { await nodeStore.fetchNodes() }
   async function refreshConsoleAndNodes() { await Promise.all([refreshConsole(), refreshNodes()]) }
-  /** 静默刷新日志：吞掉错误，用于后台自动刷新场景（不干扰用户） */
   async function refreshLogsSilently() { await options.loadLogs(true).catch(e => console.warn(e)) }
 
   return {

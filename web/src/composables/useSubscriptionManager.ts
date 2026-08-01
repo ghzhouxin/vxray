@@ -1,7 +1,6 @@
 import { ref } from 'vue'
 import { useSubscriptionStore } from '@/stores'
-import { handleError, msg } from '@/utils/message'
-import { withLoading } from '@/utils/async'
+import { msg } from '@/utils/message'
 import { useActionExecutor } from './useActionExecutor'
 import type { Subscription, SubscriptionFormData, RefreshContext } from '@/types'
 
@@ -15,16 +14,18 @@ export function useSubscriptionManager(ctx: RefreshContext) {
   const submittingSubscription = ref(false)
 
   async function handleSubmitSubscription(id: number | null, data: SubscriptionFormData) {
-    try {
-      await withLoading(submittingSubscription, async () => {
+    await execute(
+      async () => {
         if (id) await subscriptionStore.updateSubscription(id, data)
         else await subscriptionStore.addSubscription(data)
-        await refreshConsoleAndNodes()
-        msg.success('保存成功')
-      })
-    } catch (e) {
-      handleError(e, '保存订阅失败')
-    }
+      },
+      {
+        refreshAfterAction: refreshConsoleAndNodes,
+        loading: submittingSubscription,
+        successMsg: '保存成功',
+        errorMsg: '保存订阅失败'
+      }
+    )
   }
 
   async function runSubscriptionUpdate(ids?: number[]) {

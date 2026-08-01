@@ -7,6 +7,7 @@ import (
 
 	"v2ray-server/internal/constants"
 	"v2ray-server/internal/model"
+	"v2ray-server/pkg/utils"
 
 	"gorm.io/gorm"
 )
@@ -46,7 +47,11 @@ func (r *NodeRepository) FindByFilter(filter model.NodeFilter) ([]*model.Node, s
 	var nextCursor string
 	if filter.Limit > 0 && len(nodes) > filter.Limit {
 		last := nodes[filter.Limit-1]
-		nextCursor = encodeNodeCursor(last)
+		cursor, err := encodeNodeCursor(last)
+		if err != nil {
+			return nil, "", err
+		}
+		nextCursor = cursor
 		nodes = nodes[:filter.Limit]
 	}
 	return nodes, nextCursor, nil
@@ -146,6 +151,26 @@ func (r *NodeRepository) UpdateLatency(id uint, latency int64) error {
 	return r.db.Model(&model.Node{}).Where("id = ?", id).Updates(map[string]any{"latency": latency, "latency_rank": latencyRank(latency)}).Error
 }
 
+type LatencyUpdate struct {
+	ID      uint
+	Latency int64
+}
+
+func (r *NodeRepository) BatchUpdateLatency(updates []LatencyUpdate) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		for _, u := range updates {
+			if err := tx.Model(&model.Node{}).Where("id = ?", u.ID).
+				Updates(map[string]any{"latency": u.Latency, "latency_rank": latencyRank(u.Latency)}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (r *NodeRepository) Delete(id uint) error { return r.db.Delete(&model.Node{}, id).Error }
 func (r *NodeRepository) DeleteByLatency(latency int64) (int64, error) {
 	result := r.db.Where("latency = ?", latency).Delete(&model.Node{})
@@ -234,8 +259,8 @@ func (r *NodeRepository) applyNodeCursor(query *gorm.DB, cursorValue string) *go
 	return query.Where("latency_rank > ? OR (latency_rank = ? AND latency > ?) OR (latency_rank = ? AND latency = ? AND id > ?)", cursor.LatencyRank, cursor.LatencyRank, cursor.Latency, cursor.LatencyRank, cursor.Latency, cursor.ID)
 }
 
-func encodeNodeCursor(node *model.Node) string {
-	return encodeCursor(nodeCursor{
+func encodeNodeCursor(node *model.Node) (string, error) {
+	return utils.EncodeCursor(nodeCursor{
 		ID:          node.ID,
 		Latency:     node.Latency,
 		LatencyRank: node.LatencyRank,
@@ -244,17 +269,18 @@ func encodeNodeCursor(node *model.Node) string {
 
 func decodeNodeCursor(value string) (nodeCursor, bool) {
 	var cursor nodeCursor
-	return cursor, decodeCursor(value, &cursor)
+	return cursor, utils.DecodeCursor(value, &cursor)
 }
 
 func latencyRank(latency int64) int {
-	if latency >= constants.LatencyMinValid {
+	switch constants.LatencyStatus(latency) {
+	case constants.LatencyStatusAvailable:
 		return 0
-	}
-	if latency == constants.LatencyUntested {
+	case constants.LatencyStatusTimeout:
+		return 2
+	default:
 		return 1
 	}
-	return 2
 }
 
 type nodeEndpoint struct {

@@ -5,7 +5,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"v2ray-server/internal/dto"
-	"v2ray-server/internal/model"
 	"v2ray-server/internal/service"
 	"v2ray-server/pkg/response"
 )
@@ -59,7 +58,7 @@ func (h *XrayHandler) GetConfig(c *gin.Context) {
 }
 
 func (h *XrayHandler) GetDefaultConfig(c *gin.Context) {
-	content, err := h.services.Config.GetDefaultXrayConfigContent()
+	content, err := h.services.Xray.GetDefaultConfig()
 	if handleError(c, err) {
 		return
 	}
@@ -86,7 +85,7 @@ func (h *XrayHandler) SpeedTestWebsites(c *gin.Context) {
 		response.BadRequest(c, "xray not running")
 		return
 	}
-	ports, err := h.services.Xray.GetXrayPorts()
+	ports, err := h.services.Xray.XrayPorts()
 	if handleError(c, err) {
 		return
 	}
@@ -95,20 +94,9 @@ func (h *XrayHandler) SpeedTestWebsites(c *gin.Context) {
 		return
 	}
 
-	results, err := h.services.Xray.SpeedTestWebsite(ports.SOCKSPort)
-	if handleError(c, err) {
+	if err := h.services.Xray.SpeedTestWebsite(ports.SOCKSPort); err != nil {
+		handleError(c, err)
 		return
 	}
-	response.Success(c, results)
-}
-
-func toNodeInfo(node *model.Node) *dto.NodeInfo {
-	if node == nil {
-		return nil
-	}
-	infos := service.ToNodeInfos([]*model.Node{node})
-	if len(infos) == 0 {
-		return nil
-	}
-	return &infos[0]
+	response.Success(c, nil)
 }

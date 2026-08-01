@@ -11,7 +11,6 @@
           :model-value="level"
           :options="levelOptions"
           placeholder="等级"
-          :display-label="levelLabel"
           menu-width="120px"
           height="28px"
           placement="top"
@@ -22,7 +21,6 @@
           :model-value="tag"
           :options="tagOptions"
           placeholder="来源"
-          :display-label="tagLabel"
           menu-width="160px"
           height="28px"
           placement="top"
@@ -125,8 +123,6 @@ const tagOptions = computed(() => [
   { label: ALL_OPTION_LABEL, value: ALL_OPTION_VALUE },
   ...props.tags.map(t => ({ label: t, value: t }))
 ])
-const levelLabel = computed(() => props.level ? levelOptions.value.find(item => item.value === props.level)?.label || '等级' : '等级')
-const tagLabel = computed(() => props.tag ? tagOptions.value.find(item => item.value === props.tag)?.label || '来源' : '来源')
 
 function resolveDetailLevel(log: Log) {
   if (!log.detail) return ''

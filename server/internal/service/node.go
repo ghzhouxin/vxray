@@ -53,7 +53,7 @@ var ErrNodeSpeedTestRunning = errors.New("node_speedtest_running")
 func NewNodeService(xraySvc *XrayService, repo *repository.NodeRepository, cfg *config.State, logger *LogService) *NodeService {
 	return &NodeService{
 		repo:      repo,
-		speedTest: speedtest.New(cfg.UserSettings()),
+		speedTest: speedtest.New(cfg),
 		xraySvc:   xraySvc,
 		cfg:       cfg,
 		logger:    logger,
@@ -278,11 +278,27 @@ func (s *NodeService) createJobProgressWrapper(job *nodeSpeedTestJob, op *Operat
 				})
 			}
 		}()
+
+		const batchWriteSize = 10
+		pending := make([]repository.LatencyUpdate, 0, batchWriteSize)
+		flush := func() {
+			if len(pending) > 0 {
+				if err := s.repo.BatchUpdateLatency(pending); err != nil && s.logger != nil {
+					s.logger.Error(constants.TagSpeedtest, "批量更新节点延迟失败", map[string]any{"count": len(pending), "error": err.Error()})
+				}
+				pending = pending[:0]
+			}
+		}
+		defer flush()
+
 		lastPercent := -1
 		lastCompletedStep := 0
 		for p := range wrappedChan {
 			if p.NodeID > 0 && !p.Testing {
-				s.updateNodeLatency(p.NodeID, p.Latency)
+				pending = append(pending, repository.LatencyUpdate{ID: p.NodeID, Latency: p.Latency})
+				if len(pending) >= batchWriteSize {
+					flush()
+				}
 			}
 
 			status := "running"
@@ -509,16 +525,8 @@ func toSpeedNodes(nodes []*model.Node) []speedtest.Node {
 	return speedNodes
 }
 
-func (s *NodeService) updateNodeLatency(nodeID uint, latency int64) {
-	if err := s.repo.UpdateLatency(nodeID, latency); err != nil {
-		if s.logger != nil {
-			s.logger.Error(constants.TagSpeedtest, "更新节点延迟失败", map[string]any{"node_id": nodeID, "error": err.Error()})
-		}
-	}
-}
-
 func (s *NodeService) listWithPinnedActiveNode(filter model.NodeFilter) ([]*model.Node, string, bool, error) {
-	activeID := s.cfg.GetActiveNodeID()
+	activeID := s.cfg.ActiveNodeID()
 	if activeID == 0 {
 		return nil, "", false, nil
 	}
@@ -577,16 +585,7 @@ func nodeMatchesFilter(node *model.Node, filter model.NodeFilter) bool {
 }
 
 func nodeMatchesLatencyStatus(node *model.Node, status string) bool {
-	switch status {
-	case constants.LatencyStatusPending:
-		return node.Latency == constants.LatencyUntested
-	case constants.LatencyStatusAvailable:
-		return node.Latency >= constants.LatencyMinValid
-	case constants.LatencyStatusTimeout:
-		return node.Latency == constants.LatencyTimeout
-	default:
-		return false
-	}
+	return constants.LatencyStatus(node.Latency) == status
 }
 
 func nodeMatchesKeyword(node *model.Node, keyword string) bool {

@@ -1,7 +1,5 @@
 import { ref } from 'vue'
 import { useNodeStore } from '@/stores'
-import { handleError, msg } from '@/utils/message'
-import { withLoading } from '@/utils/async'
 import { useActionExecutor } from './useActionExecutor'
 import type { Node, RefreshContext } from '@/types'
 
@@ -35,17 +33,17 @@ export function useNodeActions(options: NodeActionOptions) {
     })
   }
 
-  // 不走 execute()：useActionExecutor 未暴露 loading ref，且 execute 的 successMsg 不支持动态文案（`${count} 个`）
   async function handleDeleteFailed() {
-    try {
-      await withLoading(deletingFailedNodes, async () => {
-        const count = await nodeStore.deleteFailedNodes(nodeStore.activeFilter)
-        await refreshConsoleAndNodes()
-        msg.success(`已删除 ${count} 个超时节点`)
-      })
-    } catch (e) {
-      handleError(e, '删除超时节点失败')
-    }
+    let count = 0
+    await execute(
+      async () => { count = await nodeStore.deleteFailedNodes(nodeStore.activeFilter) },
+      {
+        refreshAfterAction: refreshConsoleAndNodes,
+        loading: deletingFailedNodes,
+        successMsg: () => `已删除 ${count} 个超时节点`,
+        errorMsg: '删除超时节点失败'
+      }
+    )
   }
 
   return { deletingFailedNodes, handleUseNode, handleDeleteNode, handleDeleteFailed }

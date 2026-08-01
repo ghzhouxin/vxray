@@ -36,3 +36,12 @@ type NodeFilter struct {
 	Limit           int
 	ExcludeID       uint
 }
+
+// Getter methods for clash.ClashNode interface.
+// 保留 Get 前缀：Go 不允许导出字段与同名方法共存。
+func (n *Node) GetName() string              { return n.Name }
+func (n *Node) GetProtocol() string          { return n.Protocol }
+func (n *Node) GetAddress() string           { return n.Address }
+func (n *Node) GetPort() int                 { return n.Port }
+func (n *Node) GetRawConfig() types.Map      { return n.RawConfig }
+func (n *Node) GetOutboundConfig() types.Map { return n.OutboundConfig }

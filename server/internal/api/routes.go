@@ -7,6 +7,8 @@ import (
 )
 
 func SetupRoutes(r *gin.Engine, services *service.Container) {
+	r.Use(CORS())
+
 	consoleHandler := NewConsoleHandler(services)
 	subHandler := NewSubscriptionHandler(services)
 	nodeHandler := NewNodeHandler(services)

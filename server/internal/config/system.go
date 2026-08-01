@@ -46,13 +46,6 @@ type GeoSource struct {
 	GeoSite string `json:"geosite"`
 }
 
-func loadSystemMeta() SystemMeta {
-	home := resolveHome()
-	system := buildSystemMeta(home)
-	applySystemOverrides(&system)
-	return system
-}
-
 func resolveHome() string {
 	home := strings.TrimSpace(os.Getenv("VXRAY_HOME"))
 	if home != "" {

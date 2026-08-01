@@ -4,7 +4,6 @@
     :title="title"
     :width="width"
     append-to-body
-    class="app-dialog"
     v-bind="dialogAttrs"
     @update:model-value="emit('update:modelValue', $event)"
   >

@@ -7,14 +7,14 @@ import (
 	"net/http"
 	"os"
 
-	"v2ray-server/pkg/httpclient"
+	"v2ray-server/pkg/utils"
 )
 
 type Config interface {
-	GetGeoIPPath() string
-	GetGeoSitePath() string
-	GetGeoDir() string
-	GetGeoUpdateURL() (geoIP, geoSite string, ok bool)
+	GeoIPPath() string
+	GeoSitePath() string
+	GeoDir() string
+	GeoUpdateURL() (geoIP, geoSite string, ok bool)
 }
 
 type Manager struct {
@@ -23,13 +23,13 @@ type Manager struct {
 }
 
 func NewManager(cfg Config) *Manager {
-	return &Manager{cfg: cfg, client: httpclient.LongRunning()}
+	return &Manager{cfg: cfg, client: utils.LongRunningHTTPClient()}
 }
 
 func (m *Manager) GetFileInfo() map[string]any {
-	info := map[string]any{"data_dir": m.cfg.GetGeoDir()}
-	m.addFileInfo(info, "geoip", m.cfg.GetGeoIPPath())
-	m.addFileInfo(info, "geosite", m.cfg.GetGeoSitePath())
+	info := map[string]any{"data_dir": m.cfg.GeoDir()}
+	m.addFileInfo(info, "geoip", m.cfg.GeoIPPath())
+	m.addFileInfo(info, "geosite", m.cfg.GeoSitePath())
 	return info
 }
 
@@ -54,11 +54,11 @@ func (m *Manager) DownloadAll(ctx context.Context) error {
 }
 
 func (m *Manager) downloadGeoIP(ctx context.Context) error {
-	return m.downloadGeoFile(ctx, m.cfg.GetGeoUpdateURL, true)
+	return m.downloadGeoFile(ctx, m.cfg.GeoUpdateURL, true)
 }
 
 func (m *Manager) downloadGeoSite(ctx context.Context) error {
-	return m.downloadGeoFile(ctx, m.cfg.GetGeoUpdateURL, false)
+	return m.downloadGeoFile(ctx, m.cfg.GeoUpdateURL, false)
 }
 
 func (m *Manager) downloadGeoFile(ctx context.Context, getURLs func() (string, string, bool), isIP bool) error {
@@ -67,10 +67,10 @@ func (m *Manager) downloadGeoFile(ctx context.Context, getURLs func() (string, s
 		return fmt.Errorf("unknown geo source")
 	}
 	geoURL := geoIP
-	savePath := m.cfg.GetGeoIPPath()
+	savePath := m.cfg.GeoIPPath()
 	if !isIP {
 		geoURL = geoSite
-		savePath = m.cfg.GetGeoSitePath()
+		savePath = m.cfg.GeoSitePath()
 	}
 	return m.download(ctx, geoURL, savePath)
 }

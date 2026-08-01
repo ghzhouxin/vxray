@@ -1,21 +1,20 @@
-package repository
+package utils
 
 import (
 	"encoding/base64"
 	"encoding/json"
 )
 
-// encodeCursor 将任意结构体编码为 base64+JSON 游标字符串。
-func encodeCursor(v any) string {
+// EncodeCursor 将任意结构体编码为 base64+JSON 游标字符串。
+func EncodeCursor(v any) (string, error) {
 	data, err := json.Marshal(v)
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return base64.RawURLEncoding.EncodeToString(data)
+	return base64.RawURLEncoding.EncodeToString(data), nil
 }
 
-// decodeCursor 将游标字符串解码到 v，失败返回 false。
-func decodeCursor(value string, v any) bool {
+func DecodeCursor(value string, v any) bool {
 	if value == "" {
 		return false
 	}

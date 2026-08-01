@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { settingsApi } from '@/api'
 import { withLoading } from '@/utils/async'
-import type { SystemMeta, UserSettings } from '@/types'
+import type { SpeedTestTarget, SystemMeta, UserSettings } from '@/types'
 
 function createUserSettings(): UserSettings {
   return {
@@ -48,9 +48,13 @@ export const useSettingsStore = defineStore('settings', () => {
 
   function restoreDefaultUserSettings() { settings.value = structuredClone(defaultSettings.value) }
 
+  function updateWebsiteTargets(targets: SpeedTestTarget[]) {
+    settings.value.speedtest.website_targets = targets
+  }
+
   return {
-    settings, defaultSettings, systemMeta,
+    settings, systemMeta,
     loading, settingsSaving,
-    fetchConfigView, saveUserSettings, restoreDefaultUserSettings
+    fetchConfigView, saveUserSettings, restoreDefaultUserSettings, updateWebsiteTargets
   }
 })

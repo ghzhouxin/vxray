@@ -9,7 +9,6 @@ import (
 	"v2ray-server/pkg/types"
 )
 
-// URLSanitizer 清洗单个 URL，返回空串表示该 URL 非法应被过滤。
 type URLSanitizer func(url string) string
 
 type Service struct {
@@ -22,8 +21,7 @@ func NewService(sanitizers ...URLSanitizer) *Service {
 	return &Service{sanitizers: sanitizers}
 }
 
-// protocolPrefix extracts the protocol scheme prefix (e.g. "vmess://") for logging,
-// avoiding credential exposure in URLs like trojan://password@host or ss://base64@host.
+// protocolPrefix 提取协议前缀用于日志，避免暴露 trojan://password@host 等凭证
 func protocolPrefix(url string) string {
 	for _, p := range types.ProtocolPrefixes {
 		if strings.HasPrefix(url, p) {
@@ -73,7 +71,6 @@ func (s *Service) ParseNodesWithDedup(urls []string) *types.ParseResult {
 
 	wg.Wait()
 
-	// Deduplicate by IdentityKey, preserving original URL order
 	nodesMap := make(map[string]*types.ParsedNode)
 	nodes := make([]*types.ParsedNode, 0, len(urls))
 	for _, s := range results {

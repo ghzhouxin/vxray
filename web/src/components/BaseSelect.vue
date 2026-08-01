@@ -30,7 +30,6 @@ const props = withDefaults(defineProps<{
   options: Array<{ label: string; value: string }>
   placeholder?: string
   disabled?: boolean
-  displayLabel?: string
   placement?: 'top' | 'bottom'
   menuWidth?: string
   height?: string
@@ -56,7 +55,6 @@ function isItemActive(value: string) {
 }
 
 const triggerLabel = computed(() => {
-  if (props.displayLabel) return props.displayLabel
   if (props.multiple) {
     if (selectedArray.value.length === 0) return props.placeholder
     const labels = selectedArray.value

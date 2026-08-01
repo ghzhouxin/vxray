@@ -20,7 +20,7 @@ export function useConsoleHandlers(ctx: ConsoleActionContext) {
   const xrayStore = useXrayStore()
   const nodeStore = useNodeStore()
   const proxyStore = useProxyStore()
-  const configStore = useSettingsStore()
+  const settingsStore = useSettingsStore()
   const xrayConfigStore = useXrayConfigStore()
   const geoStore = useGeoStore()
 
@@ -76,7 +76,7 @@ export function useConsoleHandlers(ctx: ConsoleActionContext) {
   }
 
   async function handleSaveUserSettings() {
-    await execute(() => configStore.saveUserSettings(), {
+    await execute(() => settingsStore.saveUserSettings(), {
       refreshAfterAction: refreshConsole,
       skipLogsRefresh: true,
       successMsg: '设置已保存',

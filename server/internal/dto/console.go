@@ -1,24 +1,16 @@
 package dto
 
 type ConsoleSnapshot struct {
-	NodeSummary      NodeSummaryDTO              `json:"node_summary"`
-	Runtime          ConsoleRuntimeDTO           `json:"runtime"`
-	SpeedTestTargets []WebsiteSpeedTestResultDTO `json:"speedtest_targets"`
-	Subscriptions    []SubscriptionDTO           `json:"subscriptions"`
-	Protocols        []ProtocolOption            `json:"protocols"`
-	Logs             ConsoleLogsDTO              `json:"logs"`
+	NodeSummary   NodeSummaryDTO    `json:"node_summary"`
+	Runtime       ConsoleRuntimeDTO `json:"runtime"`
+	Subscriptions []SubscriptionDTO `json:"subscriptions"`
+	Protocols     []ProtocolOption  `json:"protocols"`
+	Logs          ConsoleLogsDTO    `json:"logs"`
 }
 
 type ProtocolOption struct {
 	Value string `json:"value"`
 	Label string `json:"label"`
-}
-
-type WebsiteSpeedTestResultDTO struct {
-	Name    string `json:"name"`
-	URL     string `json:"url"`
-	Latency int64  `json:"latency"`
-	Error   string `json:"error,omitempty"`
 }
 
 type NodeSummaryDTO struct {

@@ -80,11 +80,15 @@ export const useNodeStore = defineStore('node', () => {
     await nodeApi.activateNode(id)
   }
 
+  async function fetchSpeedTestStatus() {
+    return nodeApi.getSpeedTestStatus()
+  }
+
   function setProtocols(list: ProtocolOption[]) { protocols.value = list }
 
   return {
     nodes, protocols, loading, loadingMore, hasMore, filter, activeFilter,
-    fetchNodes, loadMoreNodes, speedTest,
+    fetchNodes, loadMoreNodes, speedTest, fetchSpeedTestStatus,
     deleteNode, deleteFailedNodes, activateNode,
     setProtocols
   }

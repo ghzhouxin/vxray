@@ -6,6 +6,7 @@ import (
 
 	"v2ray-server/internal/constants"
 	"v2ray-server/internal/model"
+	"v2ray-server/pkg/utils"
 
 	"gorm.io/gorm"
 )
@@ -64,7 +65,11 @@ func (r *LogRepository) FindByFilter(filter model.LogFilter) ([]model.Log, strin
 
 	var nextCursor string
 	if len(logs) > limit {
-		nextCursor = encodeLogCursor(logs[limit-1])
+		cursor, err := encodeLogCursor(logs[limit-1])
+		if err != nil {
+			return nil, "", err
+		}
+		nextCursor = cursor
 		logs = logs[:limit]
 	}
 	return logs, nextCursor, nil
@@ -75,11 +80,11 @@ func (r *LogRepository) DeleteAll() (int64, error) {
 	return result.RowsAffected, result.Error
 }
 
-func encodeLogCursor(log model.Log) string {
-	return encodeCursor(logCursor{UpdatedAt: log.UpdatedAt.UnixNano(), ID: log.ID})
+func encodeLogCursor(log model.Log) (string, error) {
+	return utils.EncodeCursor(logCursor{UpdatedAt: log.UpdatedAt.UnixNano(), ID: log.ID})
 }
 
 func decodeLogCursor(value string) (logCursor, bool) {
 	var cursor logCursor
-	return cursor, decodeCursor(value, &cursor)
+	return cursor, utils.DecodeCursor(value, &cursor)
 }

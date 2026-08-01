@@ -11,7 +11,6 @@
           :model-value="String(subscriptionFilter || '')"
           :options="subscriptionSelectOptions"
           placeholder="订阅"
-          :display-label="selectedSubscriptionLabel"
           @update:model-value="v => subscriptionFilter = v ? Number(v) : ''"
         />
       </div>
@@ -20,7 +19,6 @@
           :model-value="protocolFilter"
           :options="protocolOptions"
           placeholder="协议"
-          :display-label="protocolLabel"
           @update:model-value="value => protocolFilter = value"
         />
       </div>
@@ -33,7 +31,6 @@
         :disabled="btn.disabled"
         :working="btn.working"
         :tone="btn.tone"
-        data-log-keep-open
         @click="onButtonClick(btn.event)"
       >
         <component :is="btn.icon" />
@@ -44,7 +41,6 @@
         :disabled="subscriptionUpdating || operationRunning"
         :working="subscriptionUpdating"
         tone="primary"
-        data-log-keep-open
         @click="$emit('update-all-subscriptions')"
       >
         <Refresh />
@@ -87,25 +83,16 @@ const protocolOptions = computed(() => [
   ...nodeStore.protocols
 ])
 
-const selectedSubscriptionLabel = computed(() => {
-  const selected = subscriptions.value.find(sub => sub.id === subscriptionFilter.value)
-  return selected ? selected.name : '订阅'
-})
-
 const subscriptionSelectOptions = computed(() => [
   { label: ALL_OPTION_LABEL, value: ALL_OPTION_VALUE },
   ...subscriptions.value.map(s => ({ label: s.name, value: String(s.id) }))
 ])
 
-const protocolLabel = computed(() => protocolFilter.value ? protocolOptions.value.find(item => item.value === protocolFilter.value)?.label || '协议' : '协议')
-
-// 被点击的测速按钮，用于 working 闪烁；任务结束时自动清除
 const activeSpeedAction = ref<string | null>(null)
 watch(operationRunning, running => { if (!running) activeSpeedAction.value = null })
 
 const batchDisabled = computed(() => operationRunning.value)
 
-// 测速相关按钮（竖线左侧）
 const speedButtons = computed(() => [
   { event: 'speed-test-retest' as const, icon: Aim, tooltip: '补测 (Alt+T)', disabled: batchDisabled.value, working: activeSpeedAction.value === 'speed-test-retest' && batchDisabled.value, tone: 'primary' as const },
   { event: 'speed-test-available' as const, icon: CircleCheck, tooltip: '重测可用 (Alt+V)', disabled: batchDisabled.value, working: activeSpeedAction.value === 'speed-test-available' && batchDisabled.value, tone: 'primary' as const },

@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-
-	"v2ray-server/internal/constants"
 )
 
 type ProxySettings struct {
@@ -21,21 +19,32 @@ type ProxySettings struct {
 	SOCKSPort int    `json:"socks_port"`
 }
 
+type Options struct {
+	HTTPPort  int
+	SOCKSPort int
+}
+
 type Manager struct {
 	mu       sync.RWMutex
 	enabled  bool
 	settings ProxySettings
 }
 
-func NewManager() *Manager {
+func NewManager(opts Options) *Manager {
+	if opts.HTTPPort == 0 {
+		opts.HTTPPort = 18889
+	}
+	if opts.SOCKSPort == 0 {
+		opts.SOCKSPort = 18888
+	}
 	return &Manager{
 		settings: ProxySettings{
 			HTTPHost:  "127.0.0.1",
-			HTTPPort:  constants.ProxyHTTPPort,
+			HTTPPort:  opts.HTTPPort,
 			HTTPSHost: "127.0.0.1",
-			HTTPSPort: constants.ProxyHTTPPort,
+			HTTPSPort: opts.HTTPPort, // HTTPS 与 HTTP 同端口,简化配置
 			SOCKSHost: "127.0.0.1",
-			SOCKSPort: constants.ProxySOCKSPort,
+			SOCKSPort: opts.SOCKSPort,
 		},
 	}
 }
@@ -95,7 +104,6 @@ func (m *Manager) setMacOSProxy(settings ProxySettings, enable bool) error {
 	return errors.Join(errs...)
 }
 
-// runProxyCmd 执行 networksetup 子命令，失败时聚合到 errs 中。
 func runProxyCmd(errs *[]error, args ...string) {
 	if err := exec.Command("networksetup", args...).Run(); err != nil {
 		*errs = append(*errs, fmt.Errorf("networksetup %s: %w", strings.Join(args, " "), err))

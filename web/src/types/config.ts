@@ -3,9 +3,13 @@ interface GeoSource {
   geosite: string
 }
 
-interface SpeedTestTarget {
+export interface SpeedTestTarget {
   name: string
   url: string
+  icon?: string
+  latency: number
+  error?: string
+  tested_at?: number
 }
 
 export interface UserSettings {

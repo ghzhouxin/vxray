@@ -1,7 +1,6 @@
 package api
 
 import (
-	"v2ray-server/internal/config"
 	"v2ray-server/internal/constants"
 	"v2ray-server/internal/dto"
 	"v2ray-server/internal/model"
@@ -38,7 +37,7 @@ func (h *ConsoleHandler) Get(c *gin.Context) {
 	tags := h.services.Log.GetTags()
 	levels := h.services.Log.GetLevels()
 
-	ports, err := h.services.Xray.GetXrayPorts()
+	ports, err := h.services.Xray.XrayPorts()
 	if err != nil {
 		_ = h.services.Log.Error(constants.TagXray, "获取 Xray 端口失败", map[string]any{"error": err.Error()})
 	}
@@ -57,19 +56,11 @@ func (h *ConsoleHandler) Get(c *gin.Context) {
 		runtime.CurrentNode = toNodeInfo(node)
 	}
 
-	cachedTargets, err := h.services.Config.GetWebsiteSpeedTestResults()
-	if handleError(c, err) {
-		return
-	}
-	websiteTargets := h.services.Config.UserSettings().SpeedTest.WebsiteTargets
-	speedTestTargets := mergeWebsiteSpeedTestTargets(websiteTargets, cachedTargets)
-
 	response.Success(c, dto.ConsoleSnapshot{
-		NodeSummary:      *nodeSummary,
-		Runtime:          runtime,
-		SpeedTestTargets: speedTestTargets,
-		Subscriptions:    toSubscriptionDTOs(subscriptions),
-		Protocols:        protocols,
+		NodeSummary:   *nodeSummary,
+		Runtime:       runtime,
+		Subscriptions: toSubscriptionDTOs(subscriptions),
+		Protocols:     protocols,
 		Logs: dto.ConsoleLogsDTO{
 			Items:      toLogDTOs(logs),
 			Tags:       tags,
@@ -78,24 +69,4 @@ func (h *ConsoleHandler) Get(c *gin.Context) {
 			HasMore:    nextCursor != "",
 		},
 	})
-}
-
-func mergeWebsiteSpeedTestTargets(targets []config.SpeedTestTarget, cached []config.WebsiteSpeedTestResult) []dto.WebsiteSpeedTestResultDTO {
-	cachedByURL := make(map[string]config.WebsiteSpeedTestResult, len(cached))
-	for _, item := range cached {
-		if item.URL != "" {
-			cachedByURL[item.URL] = item
-		}
-	}
-
-	results := make([]dto.WebsiteSpeedTestResultDTO, len(targets))
-	for i, target := range targets {
-		item := dto.WebsiteSpeedTestResultDTO{Name: target.Name, URL: target.URL}
-		if c, ok := cachedByURL[target.URL]; ok {
-			item.Latency = c.Latency
-			item.Error = c.Error
-		}
-		results[i] = item
-	}
-	return results
 }

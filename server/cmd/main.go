@@ -16,7 +16,7 @@ import (
 	"v2ray-server/internal/config"
 	"v2ray-server/internal/constants"
 	"v2ray-server/internal/database"
-	"v2ray-server/internal/middleware"
+	"v2ray-server/internal/repository"
 	"v2ray-server/internal/service"
 	"v2ray-server/pkg/utils"
 
@@ -47,7 +47,8 @@ func run() error {
 		return fmt.Errorf("database init: %w", err)
 	}
 
-	cfg, err := config.Load(db)
+	settingRepo := repository.NewSettingRepository(db)
+	cfg, err := config.Load(settingRepo)
 	if err != nil {
 		return fmt.Errorf("config init: %w", err)
 	}
@@ -65,7 +66,6 @@ func run() error {
 func startServer(system config.SystemMeta, db *gorm.DB, services *service.Container) error {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
-	r.Use(middleware.CORS())
 	api.SetupRoutes(r, services)
 	registerStaticWebRoutes(r, system.Web.Root)
 
@@ -135,10 +135,8 @@ func registerStaticWebRoutes(r *gin.Engine, webRoot string) {
 
 	log.Printf("Serving web assets from %s", webRoot)
 
-	// 静态资源
 	r.Static("/assets", filepath.Join(webRoot, "assets"))
 
-	// 常见静态文件
 	for _, file := range []string{
 		"favicon.svg",
 		"favicon.ico",
@@ -149,7 +147,6 @@ func registerStaticWebRoutes(r *gin.Engine, webRoot string) {
 		}
 	}
 
-	// SPA fallback
 	r.NoRoute(func(c *gin.Context) {
 		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
 			c.JSON(http.StatusNotFound, gin.H{

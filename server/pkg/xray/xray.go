@@ -12,9 +12,9 @@ import (
 )
 
 type Config interface {
-	GetXrayBinary() string
-	GetXrayConfigPath() string
-	GetGeoDir() string
+	XrayBinary() string
+	XrayConfigPath() string
+	GeoDir() string
 }
 
 type LogCallback func(level, message string)
@@ -64,8 +64,8 @@ func (m *Manager) ForceStart() error {
 
 func (m *Manager) startProcess() error {
 	ctx := context.Background()
-	m.cmd = exec.CommandContext(ctx, m.cfg.GetXrayBinary(), "run", "-c", m.cfg.GetXrayConfigPath())
-	m.cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+m.cfg.GetGeoDir())
+	m.cmd = exec.CommandContext(ctx, m.cfg.XrayBinary(), "run", "-c", m.cfg.XrayConfigPath())
+	m.cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+m.cfg.GeoDir())
 
 	stdout, err := m.cmd.StdoutPipe()
 	if err != nil {

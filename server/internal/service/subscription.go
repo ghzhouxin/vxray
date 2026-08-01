@@ -14,9 +14,9 @@ import (
 	"v2ray-server/internal/dto"
 	"v2ray-server/internal/model"
 	"v2ray-server/internal/repository"
-	"v2ray-server/pkg/httpclient"
 	"v2ray-server/pkg/subscription"
 	"v2ray-server/pkg/types"
+	"v2ray-server/pkg/utils"
 
 	"gorm.io/gorm"
 )
@@ -42,7 +42,7 @@ func NewSubscriptionService(db *gorm.DB, logger *LogService, nodeRepo *repositor
 		parser:   subscription.NewService(),
 		logSvc:   logger,
 		logger:   logger.NewTaggedLogger(constants.TagSubscription),
-		client:   httpclient.LongRunning(),
+		client:   utils.LongRunningHTTPClient(),
 	}
 }
 
@@ -281,9 +281,5 @@ func convertParsedNodeToModel(n *types.ParsedNode) *model.Node {
 	if n == nil {
 		return nil
 	}
-	name := n.Name
-	if name == "" {
-		name = n.Address
-	}
-	return &model.Node{Name: name, Protocol: n.Protocol, Address: n.Address, Port: n.Port, RawURL: n.RawURL, RawConfig: n.RawConfig, OutboundConfig: n.OutboundConfig}
+	return &model.Node{Name: n.Name, Protocol: n.Protocol, Address: n.Address, Port: n.Port, RawURL: n.RawURL, RawConfig: n.RawConfig, OutboundConfig: n.OutboundConfig}
 }
