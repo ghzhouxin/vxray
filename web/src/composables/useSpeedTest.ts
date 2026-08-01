@@ -1,5 +1,5 @@
 import { computed, ref } from 'vue'
-import { useNodeStore, useOperationStore, useXrayStore } from '@/stores'
+import { useNodeStore, useOperationStore, useSettingsStore, useXrayStore } from '@/stores'
 import { NODE_REFRESH_INTERVAL, SPEED_TEST_STATUS_POLL_INTERVAL, SPEED_TEST_FAILED } from '@/constants'
 import { handleError, msg } from '@/utils/message'
 import { SSERequestError } from '@/utils/sse'
@@ -12,6 +12,7 @@ export function useSpeedTest(ctx: RefreshContext) {
   const nodeStore = useNodeStore()
   const operationStore = useOperationStore()
   const xrayStore = useXrayStore()
+  const settingsStore = useSettingsStore()
   const { refreshConsoleAndNodes, refreshLogsSilently, showLogs } = ctx
   const { execute } = useActionExecutor(ctx)
 
@@ -99,10 +100,10 @@ export function useSpeedTest(ctx: RefreshContext) {
   }
 
   function runBatchSpeedTest(latencyStatuses?: NodeLatencyStatus[], successMessage?: string) {
-    if (latencyStatuses) {
-      nodeStore.filter.latencyStatuses = latencyStatuses
-    }
-    return runNodeSpeedTest({ filter: nodeStore.activeFilter }, successMessage)
+    const filter = latencyStatuses
+      ? { ...nodeStore.activeFilter, latencyStatuses }
+      : nodeStore.activeFilter
+    return runNodeSpeedTest({ filter }, successMessage)
   }
 
   function handleRetestTimeout() {
@@ -120,9 +121,10 @@ export function useSpeedTest(ctx: RefreshContext) {
   async function triggerAutoSpeedTest() {
     await execute(
       async () => {
-        if (!xrayStore.speedTesting) {
+        if (!xrayStore.websiteSpeedTestLoading) {
           await waitForProxyReady()
-          await xrayStore.runSpeedTestMulti()
+          await xrayStore.runWebsiteSpeedTest()
+          await settingsStore.fetchConfigView()
         }
       },
       {

@@ -23,7 +23,7 @@ func (h *SubscriptionHandler) List(c *gin.Context) {
 }
 
 func (h *SubscriptionHandler) Create(c *gin.Context) {
-	var req dto.SubscriptionCreateRequest
+	var req dto.SubscriptionRequest
 	if !bindJSON(c, &req) {
 		return
 	}
@@ -35,16 +35,15 @@ func (h *SubscriptionHandler) Create(c *gin.Context) {
 }
 
 func (h *SubscriptionHandler) Update(c *gin.Context) {
-	var req dto.SubscriptionUpdateRequest
+	var req dto.SubscriptionRequest
 	if !bindJSON(c, &req) {
 		return
 	}
-	sub := &model.Subscription{Name: req.Name, URL: req.URL}
 	id, ok := parseUintParam(c, "id")
 	if !ok {
 		return
 	}
-	sub.ID = id
+	sub := &model.Subscription{ID: id, Name: req.Name, URL: req.URL}
 	updated, err := h.services.Subscription.Update(sub)
 	if handleError(c, err) {
 		return

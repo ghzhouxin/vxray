@@ -7,6 +7,7 @@ import (
 
 	"v2ray-server/internal/constants"
 	"v2ray-server/internal/model"
+	"v2ray-server/pkg/types"
 	"v2ray-server/pkg/utils"
 
 	"gorm.io/gorm"
@@ -69,7 +70,23 @@ func (r *NodeRepository) FindByIDs(ids []uint) ([]*model.Node, error) {
 
 func (r *NodeRepository) FindTopNodes(limit int) ([]*model.Node, error) {
 	var nodes []*model.Node
-	return nodes, r.db.Where("latency >= ?", constants.LatencyMinValid).Order("latency ASC").Limit(limit).Find(&nodes).Error
+	query := r.db.Where("latency >= ?", constants.LatencyMinValid).Order("latency ASC").Limit(limit)
+	return nodes, query.Find(&nodes).Error
+}
+
+// FindByEmptyTransport returns nodes whose Transport is empty (NULL or zero value).
+// Used to migrate nodes persisted before the Transport refactor.
+func (r *NodeRepository) FindByEmptyTransport() ([]*model.Node, error) {
+	var nodes []*model.Node
+	err := r.db.Where(
+		"transport IS NULL OR transport = '' OR json_extract(transport, '$.Network') IS NULL OR json_extract(transport, '$.Network') = ''",
+	).Find(&nodes).Error
+	return nodes, err
+}
+
+// UpdateTransport updates only the Transport field of a node.
+func (r *NodeRepository) UpdateTransport(id uint, transport types.Transport) error {
+	return r.db.Model(&model.Node{}).Where("id = ?", id).Update("transport", transport).Error
 }
 
 func (r *NodeRepository) FindExistingIdentityKeys(nodes []*model.Node) (map[string]struct{}, error) {
@@ -93,7 +110,7 @@ func (r *NodeRepository) FindExistingIdentityKeys(nodes []*model.Node) (map[stri
 			args = append(args, ep.Address, ep.Port)
 		}
 		query := r.db.Model(&model.Node{}).
-			Select("address, port, protocol, raw_config, outbound_config").
+			Select("address, port, protocol, raw_config, transport").
 			Where("(address, port) IN ("+strings.Join(placeholders, ",")+")", args...)
 
 		var existing []model.Node
@@ -145,10 +162,6 @@ func (r *NodeRepository) SaveBatch(nodes []*model.Node) error {
 		}
 	}
 	return nil
-}
-
-func (r *NodeRepository) UpdateLatency(id uint, latency int64) error {
-	return r.db.Model(&model.Node{}).Where("id = ?", id).Updates(map[string]any{"latency": latency, "latency_rank": latencyRank(latency)}).Error
 }
 
 type LatencyUpdate struct {

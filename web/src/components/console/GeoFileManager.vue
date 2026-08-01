@@ -4,8 +4,8 @@
       <span class="section-label">Geo 文件</span>
       <IconButton
         tooltip="更新 Geo 文件"
-        :disabled="geoStore.geoDownloading"
-        :working="geoStore.geoDownloading"
+        :disabled="geoStore.loading"
+        :working="geoStore.loading"
         tone="primary"
         :size="ICON_BUTTON_SIZE_LG"
         @click="handleDownload"

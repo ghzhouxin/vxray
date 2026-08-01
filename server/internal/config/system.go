@@ -22,6 +22,9 @@ type PathsMeta struct {
 	XrayConfigPath string `json:"xray_config_path"`
 	GeoIP          string `json:"geoip"`
 	GeoSite        string `json:"geosite"`
+	TunConfigPath  string `json:"tun_config_path"`
+	TunLogPath     string `json:"tun_log_path"`
+	TunPidPath     string `json:"tun_pid_path"`
 }
 
 type ServerMeta struct {
@@ -67,6 +70,9 @@ func buildSystemMeta(home string) SystemMeta {
 			XrayConfigPath: filepath.Join(home, "xray/config.json"),
 			GeoIP:          filepath.Join(home, "geo/geoip.dat"),
 			GeoSite:        filepath.Join(home, "geo/geosite.dat"),
+			TunConfigPath:  filepath.Join(home, "xray/tun-config.json"),
+			TunLogPath:     filepath.Join(home, "xray/tun.log"),
+			TunPidPath:     filepath.Join(home, "xray/tun.pid"),
 		},
 		Server: ServerMeta{Host: "127.0.0.1", Port: 11888},
 		Xray:   XrayMeta{Binary: "xray"},

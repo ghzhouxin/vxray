@@ -9,17 +9,7 @@ import (
 	"v2ray-server/pkg/types"
 )
 
-type URLSanitizer func(url string) string
-
-type Service struct {
-	sanitizers []URLSanitizer
-}
-
 const maxParseConcurrency = 32
-
-func NewService(sanitizers ...URLSanitizer) *Service {
-	return &Service{sanitizers: sanitizers}
-}
 
 // protocolPrefix 提取协议前缀用于日志，避免暴露 trojan://password@host 等凭证
 func protocolPrefix(url string) string {
@@ -31,7 +21,8 @@ func protocolPrefix(url string) string {
 	return "unknown://"
 }
 
-func (s *Service) ParseNodesWithDedup(urls []string) *types.ParseResult {
+// ParseNodesWithDedup 并发解析节点 URL，按 IdentityKey 去重。
+func ParseNodesWithDedup(urls []string) *types.ParseResult {
 	type slot struct {
 		node *types.ParsedNode
 		ok   bool
@@ -50,15 +41,6 @@ func (s *Service) ParseNodesWithDedup(urls []string) *types.ParseResult {
 					log.Printf("subscription: parse panic for %s: %v\n%s", protocolPrefix(url), r, debug.Stack())
 				}
 			}()
-
-			for _, sanitize := range s.sanitizers {
-				if cleaned := sanitize(url); cleaned == "" {
-					log.Printf("subscription: sanitized out %s", protocolPrefix(url))
-					return
-				} else {
-					url = cleaned
-				}
-			}
 
 			node, err := Parse(url)
 			if err != nil {

@@ -10,8 +10,8 @@ export function useSubscriptionManager(ctx: RefreshContext) {
   const { refreshConsoleAndNodes } = ctx
 
   const updatingSubscriptionId = ref(0)
-  const updatingAllSubscriptions = ref(false)
-  const submittingSubscription = ref(false)
+  const batchUpdating = ref(false)
+  const submitLoading = ref(false)
 
   async function handleSubmitSubscription(id: number | null, data: SubscriptionFormData) {
     await execute(
@@ -21,7 +21,7 @@ export function useSubscriptionManager(ctx: RefreshContext) {
       },
       {
         refreshAfterAction: refreshConsoleAndNodes,
-        loading: submittingSubscription,
+        loading: submitLoading,
         successMsg: '保存成功',
         errorMsg: '保存订阅失败'
       }
@@ -30,7 +30,7 @@ export function useSubscriptionManager(ctx: RefreshContext) {
 
   async function runSubscriptionUpdate(ids?: number[]) {
     if (!ids?.length && !subscriptionStore.subscriptions.length) { msg.warning('暂无订阅'); return }
-    updatingAllSubscriptions.value = !ids?.length
+    batchUpdating.value = !ids?.length
     updatingSubscriptionId.value = ids?.[0] || 0
     await execute(
       async () => {
@@ -48,7 +48,7 @@ export function useSubscriptionManager(ctx: RefreshContext) {
       { refreshAfterAction: refreshConsoleAndNodes, showLogsBefore: true, errorMsg: ids?.length ? '更新订阅失败' : '更新全部订阅失败' }
     )
     updatingSubscriptionId.value = 0
-    updatingAllSubscriptions.value = false
+    batchUpdating.value = false
   }
 
   function handleUpdateSubscription(id: number) { return runSubscriptionUpdate([id]) }
@@ -64,8 +64,8 @@ export function useSubscriptionManager(ctx: RefreshContext) {
 
   return {
     updatingSubscriptionId,
-    updatingAllSubscriptions,
-    submittingSubscription,
+    batchUpdating,
+    submitLoading,
     handleSubmitSubscription,
     handleUpdateSubscription,
     handleUpdateAllSubscriptions,

@@ -28,25 +28,25 @@ const (
 )
 
 type Result struct {
-	NodeID  uint   `json:"node_id"`
-	Latency int64  `json:"latency"`
-	Error   string `json:"error,omitempty"`
+	NodeID  uint
+	Latency int64
+	Error   string
 }
 
 type Progress struct {
-	Total     int    `json:"total"`
-	Completed int    `json:"completed"`
-	Success   int    `json:"success"`
-	Failed    int    `json:"failed"`
-	NodeID    uint   `json:"node_id,omitempty"`
-	Latency   int64  `json:"latency,omitempty"`
-	ErrMsg    string `json:"error,omitempty"`
-	Testing   bool   `json:"testing"`
+	Total     int
+	Completed int
+	Success   int
+	Failed    int
+	NodeID    uint
+	Latency   int64
+	ErrMsg    string
+	Testing   bool
 }
 
 type Node struct {
-	ID             uint
-	OutboundConfig types.Map
+	ID       uint
+	Outbound types.Map
 }
 
 type Config interface {
@@ -211,7 +211,7 @@ func (st *SpeedTest) tcpPrescreen(
 				}
 			}()
 
-			addr, port := extractServerAddr(n.OutboundConfig)
+			addr, port := extractServerAddr(n.Outbound)
 			if addr == "" || port == 0 {
 				passedChan <- n
 				return
@@ -227,7 +227,7 @@ func (st *SpeedTest) tcpPrescreen(
 			// TCP 可达后，对 TLS 节点额外做握手检测。
 			// checkTLS 内部 defer 保证 conn 在所有路径（含 panic）都被关闭，
 			// 避免 passedChan 阻塞时 fd 泄漏。
-			if sni := extractTLSServerName(n.OutboundConfig); sni != "" {
+			if sni := extractTLSServerName(n.Outbound); sni != "" {
 				if handshakeErr := checkTLS(conn, sni, tlsTimeout); handshakeErr != nil {
 					sendPrescreenFail(progressChan, n, done, succ, fail, total, fmt.Sprintf("tls prescreen: %v", handshakeErr))
 					return
@@ -311,7 +311,7 @@ func (st *SpeedTest) testOutbounds(
 				}
 			}
 
-			result := st.TestOutbound(n.OutboundConfig, n.ID)
+			result := st.TestOutbound(n.Outbound, n.ID)
 
 			d := done.Add(1)
 			if result.Error == "" {
@@ -344,24 +344,22 @@ func (st *SpeedTest) testOutbounds(
 
 // extractServerAddr 从 outbound config 提取服务器地址和端口。
 // 支持 VLESS/VMess (vnext[0]) 和 Trojan/SS (servers[0]) 两种结构。
-// 注意：用 map[string]any 而非 types.Map 断言，因为 DB 反序列化后
-// 嵌套值类型为 map[string]any（unnamed type），types.Map 断言会失败。
 func extractServerAddr(outbound types.Map) (string, int) {
-	settings, ok := outbound["settings"].(map[string]any)
-	if !ok {
+	settings := asMap(outbound["settings"])
+	if settings == nil {
 		return "", 0
 	}
 	if vnext, ok := settings["vnext"].([]any); ok && len(vnext) > 0 {
-		first, ok := vnext[0].(map[string]any)
-		if !ok {
+		first := asMap(vnext[0])
+		if first == nil {
 			return "", 0
 		}
 		addr, _ := first["address"].(string)
 		return addr, toInt(first["port"])
 	}
 	if servers, ok := settings["servers"].([]any); ok && len(servers) > 0 {
-		first, ok := servers[0].(map[string]any)
-		if !ok {
+		first := asMap(servers[0])
+		if first == nil {
 			return "", 0
 		}
 		addr, _ := first["address"].(string)
@@ -373,20 +371,31 @@ func extractServerAddr(outbound types.Map) (string, int) {
 // extractTLSServerName 从 outbound config 提取 TLS SNI。
 // 仅对 security=="tls" 的节点返回 SNI，其他（none/reality/空）返回空。
 func extractTLSServerName(outbound types.Map) string {
-	streamSettings, ok := outbound["streamSettings"].(map[string]any)
-	if !ok {
+	streamSettings := asMap(outbound["streamSettings"])
+	if streamSettings == nil {
 		return ""
 	}
 	security, _ := streamSettings["security"].(string)
 	if security != "tls" {
 		return ""
 	}
-	tlsSettings, ok := streamSettings["tlsSettings"].(map[string]any)
-	if !ok {
+	tlsSettings := asMap(streamSettings["tlsSettings"])
+	if tlsSettings == nil {
 		return ""
 	}
 	sni, _ := tlsSettings["serverName"].(string)
 	return sni
+}
+
+// asMap 将 any 转为 map[string]any，兼容 types.Map（named type）和 DB 反序列化的 unnamed type。
+func asMap(v any) map[string]any {
+	switch m := v.(type) {
+	case map[string]any:
+		return m
+	case types.Map:
+		return map[string]any(m)
+	}
+	return nil
 }
 
 func toInt(v any) int {

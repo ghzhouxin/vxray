@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { xrayApi } from '@/api'
 import { withLoading } from '@/utils/async'
-import { useSettingsStore } from './settings'
 import type { ConsoleSnapshot, XrayStatusResponse } from '@/types'
 
 export const useXrayStore = defineStore('xray', () => {
@@ -37,19 +36,19 @@ export const useXrayStore = defineStore('xray', () => {
     }
   }
 
-  const speedTesting = ref(false)
+  // websiteSpeedTestLoading 标识网站测速进行中（区别于节点测速 operationStore.running）。
+  const websiteSpeedTestLoading = ref(false)
 
-  async function runSpeedTestMulti(): Promise<void> {
-    await withLoading(speedTesting, async () => {
+  async function runWebsiteSpeedTest(): Promise<void> {
+    await withLoading(websiteSpeedTestLoading, async () => {
       await xrayApi.speedTestWebsites()
-      await useSettingsStore().fetchConfigView()
     })
   }
 
   return {
-    loading, speedTesting,
+    loading, websiteSpeedTestLoading,
     isRunning, currentNode,
     fetchStatus, startXray, stopXray, applyConsoleSnapshot,
-    runSpeedTestMulti
+    runWebsiteSpeedTest
   }
 })

@@ -1,6 +1,7 @@
 export * from './subscription'
 export * from './node'
 export * from './xray'
+export * from './tun'
 export * from './logs'
 export * from './config'
 export * from './geo'

@@ -1,4 +1,4 @@
-import { useGeoStore, useNodeStore, useProxyStore, useSettingsStore, useXrayConfigStore, useXrayStore } from '@/stores'
+import { useGeoStore, useNodeStore, useProxyStore, useSettingsStore, useTunStore, useXrayConfigStore, useXrayStore } from '@/stores'
 import { useActionExecutor } from './useActionExecutor'
 import { handleError, msg } from '@/utils/message'
 import { waitForProxyReady } from '@/utils/async'
@@ -20,6 +20,7 @@ export function useConsoleHandlers(ctx: ConsoleActionContext) {
   const xrayStore = useXrayStore()
   const nodeStore = useNodeStore()
   const proxyStore = useProxyStore()
+  const tunStore = useTunStore()
   const settingsStore = useSettingsStore()
   const xrayConfigStore = useXrayConfigStore()
   const geoStore = useGeoStore()
@@ -33,7 +34,7 @@ export function useConsoleHandlers(ctx: ConsoleActionContext) {
   }
 
   async function handleSpeedTest() {
-    if (xrayStore.speedTesting) { msg.warning('网站测速进行中'); return }
+    if (xrayStore.websiteSpeedTestLoading) { msg.warning('网站测速进行中'); return }
     if (!xrayStore.isRunning || !xrayStore.currentNode) {
       const current = xrayStore.currentNode
       const candidate = current
@@ -46,10 +47,16 @@ export function useConsoleHandlers(ctx: ConsoleActionContext) {
       })
       await waitForProxyReady()
     }
-    await execute(() => xrayStore.runSpeedTestMulti(), {
-      refreshAfterAction: refreshConsole, showLogsBefore: true,
-      successMsg: '网站测速完成', errorMsg: SPEED_TEST_FAILED
-    })
+    await execute(
+      async () => {
+        await xrayStore.runWebsiteSpeedTest()
+        await settingsStore.fetchConfigView()
+      },
+      {
+        refreshAfterAction: refreshConsole, showLogsBefore: true,
+        successMsg: '网站测速完成', errorMsg: SPEED_TEST_FAILED
+      }
+    )
   }
 
   async function handleProxyToggle() {
@@ -60,6 +67,19 @@ export function useConsoleHandlers(ctx: ConsoleActionContext) {
       successMsg: willEnable ? '系统代理已开启' : '系统代理已关闭',
       errorMsg: '切换系统代理失败'
     })
+  }
+
+  async function handleTunToggle() {
+    const willEnable = !tunStore.isEnabled
+    await execute(
+      async () => { if (willEnable) await tunStore.enable(); else await tunStore.disable() },
+      {
+        refreshAfterAction: refreshConsoleAndNodes,
+        showLogsBefore: true,
+        successMsg: willEnable ? 'TUN 模式已开启' : 'TUN 模式已关闭',
+        errorMsg: '切换 TUN 模式失败'
+      }
+    )
   }
 
   async function openSettingsModal() {
@@ -113,6 +133,7 @@ export function useConsoleHandlers(ctx: ConsoleActionContext) {
     handlePowerToggle,
     handleSpeedTest,
     handleProxyToggle,
+    handleTunToggle,
     openSettingsModal,
     openRuntimeModal,
     openXrayConfigModal,

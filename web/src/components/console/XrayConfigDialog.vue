@@ -9,7 +9,7 @@
         <IconButton tooltip="恢复默认配置" :size="ICON_BUTTON_SIZE_SM" tone="muted" @click="handleResetDefault"><RefreshLeft /></IconButton>
         <IconButton tooltip="回滚到已保存版本" :size="ICON_BUTTON_SIZE_SM" tone="muted" @click="handleRevert"><Back /></IconButton>
         <span class="action-divider"></span>
-        <IconButton tooltip="保存配置" :size="ICON_BUTTON_SIZE_SM" tone="primary" :working="xrayConfigStore.saving" :disabled="xrayConfigStore.saving" @click="save"><Check /></IconButton>
+        <IconButton tooltip="保存配置" :size="ICON_BUTTON_SIZE_SM" tone="primary" :working="xrayConfigStore.loading" :disabled="xrayConfigStore.loading" @click="save"><Check /></IconButton>
       </div>
     </div>
     <div v-if="jsonError" class="editor-error-bar">⚠ {{ jsonError }}</div>
@@ -20,12 +20,12 @@
 <script setup lang="ts">
 import { json } from '@codemirror/lang-json'
 import { EditorState } from '@codemirror/state'
-import { codeFolding, ensureSyntaxTree, foldEffect, foldGutter, foldable, syntaxTree } from '@codemirror/language'
+import { codeFolding, foldGutter } from '@codemirror/language'
 import { EditorView } from '@codemirror/view'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { Back, Check, CircleCheck, Operation, RefreshLeft } from '@element-plus/icons-vue'
 import { useXrayConfigStore } from '@/stores'
-import { CODEMIRROR_PARSE_TIMEOUT_MS, ICON_BUTTON_SIZE_SM } from '@/constants'
+import { ICON_BUTTON_SIZE_SM } from '@/constants'
 import { formatJsonString, formatJsonError } from '@/utils/formatters'
 import { msg } from '@/utils/message'
 import AppDialog from '@/components/AppDialog.vue'
@@ -93,7 +93,6 @@ function ensureEditor() {
     })
   })
   validateContent(xrayConfigStore.xrayConfigText)
-  queueMicrotask(foldTopLevelSections)
 }
 
 function destroyEditor() {
@@ -104,7 +103,6 @@ function destroyEditor() {
 function syncEditorContent(value: string) {
   if (!editor || editor.state.doc.toString() === value) return
   editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: value } })
-  queueMicrotask(foldTopLevelSections)
 }
 
 function validateContent(value: string) {
@@ -142,39 +140,6 @@ async function save() {
   emit('saved')
 }
 
-function foldTopLevelSections() {
-  if (!editor) return
-  const effects = topLevelFoldRanges().map(range => foldEffect.of(range))
-  if (effects.length) {
-    editor.dispatch({ effects })
-  }
-}
-
-function topLevelFoldRanges() {
-  if (!editor) return []
-  ensureSyntaxTree(editor.state, editor.state.doc.length, CODEMIRROR_PARSE_TIMEOUT_MS)
-  const rootObject = syntaxTree(editor.state).topNode.getChild('Object')
-  if (!rootObject) return []
-
-  const ranges: Array<{ from: number; to: number }> = []
-  const cursor = rootObject.cursor()
-  if (!cursor.firstChild()) return ranges
-
-  do {
-    if (cursor.name !== 'Property') continue
-    const propertyCursor = cursor.node.cursor()
-    if (!propertyCursor.firstChild()) continue
-    do {
-      if (propertyCursor.name !== 'Object' && propertyCursor.name !== 'Array') continue
-      const range = foldable(editor.state, propertyCursor.from + 1, propertyCursor.from + 1)
-      if (range) ranges.push(range)
-      break
-    } while (propertyCursor.nextSibling())
-  } while (cursor.nextSibling())
-
-  return ranges
-}
-
 watch(
   () => props.modelValue,
   value => {
@@ -182,7 +147,6 @@ watch(
       queueMicrotask(() => {
         ensureEditor()
         syncEditorContent(xrayConfigStore.xrayConfigText)
-        queueMicrotask(foldTopLevelSections)
       })
       return
     }

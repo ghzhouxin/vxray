@@ -14,6 +14,7 @@ type LogFilter struct {
 
 type LogDTO struct {
 	ID        uint      `json:"id"`
+	Level     string    `json:"level"`
 	Message   string    `json:"message"`
 	Tag       string    `json:"tag"`
 	Detail    string    `json:"detail"`

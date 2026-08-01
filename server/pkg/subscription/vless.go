@@ -25,15 +25,16 @@ func parseVLESS(nodeURL string) (*types.ParsedNode, error) {
 		return nil, fmt.Errorf("vless: empty host")
 	}
 	port := normalizePort(portFromAny(u.Port()))
-	name := defaultString(u.Fragment, host)
+	name := firstNonEmpty(u.Fragment, host)
 	query := u.Query()
 
 	rawConfig := types.Map{"uuid": uuid}
 	if flow := validateFlow(query.Get("flow")); flow != "" {
 		rawConfig["flow"] = flow
 	}
-
-	streamSettings := buildStreamSettingsFromQuery(query)
+	if pe := firstNonEmpty(query.Get("packetEncoding"), query.Get("packet-encoding")); pe != "" {
+		rawConfig["packetEncoding"] = pe
+	}
 
 	return newParsedNode(
 		name,
@@ -41,20 +42,15 @@ func parseVLESS(nodeURL string) (*types.ParsedNode, error) {
 		host,
 		port,
 		rawConfig,
-		buildVNextOutbound(
-			types.ProtocolVLESS,
-			host,
-			port,
-			buildVLESSUsers(uuid, query),
-			streamSettings,
-		),
+		buildTransport(query),
 	), nil
 }
 
-func buildVLESSUsers(uuid string, query url.Values) []types.Map {
-	user := types.Map{"id": uuid, "encryption": defaultString(query.Get("encryption"), SecurityNone)}
-	if flow := validateFlow(query.Get("flow")); flow != "" {
-		user["flow"] = flow
+// validateFlow 仅允许 xtls-rprx-vision[-udp443]，xray-core VLessOutboundConfig.Build() 的约束。
+func validateFlow(flow string) string {
+	switch flow {
+	case "", FlowXTLSRprxVision, FlowXTLSRprxVision + "-udp443":
+		return flow
 	}
-	return []types.Map{user}
+	return ""
 }

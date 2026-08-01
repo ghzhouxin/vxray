@@ -47,10 +47,12 @@ func (h *ConsoleHandler) Get(c *gin.Context) {
 		proxy.SOCKSPort = ports.SOCKSPort
 	}
 
+	tunState := h.services.Tun.Status()
 	runtime := dto.ConsoleRuntimeDTO{
-		Running: h.services.Xray.Status(),
-		Proxy:   proxy,
-		Ports:   dto.PortsDTO{HTTP: proxy.HTTPPort, SOCKS: proxy.SOCKSPort},
+		Running:    h.services.Xray.Status(),
+		TunEnabled: tunState == service.TunEnabled,
+		TunState:   tunState.String(),
+		Proxy:      proxy,
 	}
 	if node := h.services.Xray.GetActiveNode(); node != nil {
 		runtime.CurrentNode = toNodeInfo(node)

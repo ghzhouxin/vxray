@@ -2,12 +2,8 @@ package dto
 
 import "time"
 
-type SubscriptionCreateRequest struct {
-	Name string `json:"name" binding:"required"`
-	URL  string `json:"url" binding:"required"`
-}
-
-type SubscriptionUpdateRequest struct {
+// SubscriptionRequest 同时用于订阅的创建与更新。
+type SubscriptionRequest struct {
 	Name string `json:"name" binding:"required"`
 	URL  string `json:"url" binding:"required"`
 }
@@ -25,18 +21,4 @@ type SubscriptionDTO struct {
 	NodeCount      int        `json:"node_count"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
-}
-
-type BatchUpdateResult struct {
-	Total   int `json:"total"`
-	Success int `json:"success"`
-	Failed  int `json:"failed"`
-}
-
-type ParseStats struct {
-	Total      int  `json:"total"`
-	Success    int  `json:"success"`
-	Duplicates int  `json:"duplicates"`
-	Added      int  `json:"added"`
-	Unchanged  bool `json:"unchanged"`
 }

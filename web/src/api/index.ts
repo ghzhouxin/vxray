@@ -1,6 +1,7 @@
 export { subscriptionApi } from './subscription'
 export { nodeApi } from './node'
 export { xrayApi } from './xray'
+export { tunApi } from './tun'
 export { settingsApi } from './config'
 export { geoApi } from './geo'
 export { proxyApi } from './proxy'

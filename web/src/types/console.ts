@@ -1,8 +1,7 @@
 import type { LogListResponse } from './logs'
 import type { Node, ProtocolOption } from './node'
 import type { Subscription } from './subscription'
-
-export type { ProtocolOption } from './node'
+import type { TunStatusState } from './tun'
 
 export interface RefreshContext {
   refreshConsoleAndNodes: () => Promise<void>
@@ -19,14 +18,12 @@ export interface ConsoleSnapshot {
   }
   runtime: {
     running: boolean
+    tun_enabled: boolean
+    tun_state: TunStatusState
     proxy: {
       enabled: boolean
       http_port: number
       socks_port: number
-    }
-    ports: {
-      http: number
-      socks: number
     }
     current_node?: Node
   }

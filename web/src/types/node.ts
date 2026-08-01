@@ -1,17 +1,11 @@
 import type { OperationProgress } from './operation'
 
-export interface StreamSettings {
+// 命名约定：Node 等响应类型用 snake_case 匹配 Go JSON wire format；
+// NodeFilterBase 等前端内部类型用 camelCase，由 api/node.ts toNodeParams 在 API 边界翻译。
+
+export interface Transport {
   network?: string
   security?: string
-  tlsSettings?: Record<string, unknown>
-  realitySettings?: Record<string, unknown>
-  wsSettings?: Record<string, unknown>
-  grpcSettings?: Record<string, unknown>
-  [key: string]: unknown
-}
-
-export interface OutboundConfig {
-  streamSettings?: StreamSettings
   [key: string]: unknown
 }
 
@@ -29,7 +23,7 @@ export interface Node {
   address: string
   port: number
   raw_url: string
-  outbound_config: OutboundConfig
+  transport: Transport
   latency: number
   created_at: string
   updated_at: string
@@ -57,4 +51,5 @@ export interface NodeListResponse {
 export interface NodeSpeedTestStatus {
   running: boolean
   progress?: OperationProgress
+  error?: string
 }

@@ -1,35 +1,21 @@
 package dto
 
+import "v2ray-server/internal/service"
+
 type ConsoleSnapshot struct {
-	NodeSummary   NodeSummaryDTO    `json:"node_summary"`
-	Runtime       ConsoleRuntimeDTO `json:"runtime"`
-	Subscriptions []SubscriptionDTO `json:"subscriptions"`
-	Protocols     []ProtocolOption  `json:"protocols"`
-	Logs          ConsoleLogsDTO    `json:"logs"`
-}
-
-type ProtocolOption struct {
-	Value string `json:"value"`
-	Label string `json:"label"`
-}
-
-type NodeSummaryDTO struct {
-	All       int64 `json:"all"`
-	Available int64 `json:"available"`
-	Pending   int64 `json:"pending"`
-	Timeout   int64 `json:"timeout"`
+	NodeSummary   service.NodeSummary      `json:"node_summary"`
+	Runtime       ConsoleRuntimeDTO        `json:"runtime"`
+	Subscriptions []SubscriptionDTO        `json:"subscriptions"`
+	Protocols     []service.ProtocolOption `json:"protocols"`
+	Logs          ConsoleLogsDTO           `json:"logs"`
 }
 
 type ConsoleRuntimeDTO struct {
-	Running     bool      `json:"running"`
-	Proxy       ProxyDTO  `json:"proxy"`
-	Ports       PortsDTO  `json:"ports"`
-	CurrentNode *NodeInfo `json:"current_node,omitempty"`
-}
-
-type PortsDTO struct {
-	HTTP  int `json:"http"`
-	SOCKS int `json:"socks"`
+	Running     bool              `json:"running"`
+	TunEnabled  bool              `json:"tun_enabled"`
+	TunState    string            `json:"tun_state"`
+	Proxy       ProxyDTO          `json:"proxy"`
+	CurrentNode *service.NodeInfo `json:"current_node,omitempty"`
 }
 
 type ProxyDTO struct {

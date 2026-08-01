@@ -3,7 +3,7 @@ import { ref, reactive, computed } from 'vue'
 import { nodeApi } from '@/api'
 import { LATENCY_TIMEOUT, NODE_PAGE_SIZE } from '@/constants'
 import { withLoading } from '@/utils/async'
-import type { Node, NodeFilterBase, NodeListQuery, OperationProgress, ProtocolOption } from '@/types'
+import type { ConsoleSnapshot, Node, NodeFilterBase, NodeListQuery, OperationProgress, ProtocolOption } from '@/types'
 
 export const useNodeStore = defineStore('node', () => {
   const nodes = ref<Node[]>([])
@@ -84,12 +84,14 @@ export const useNodeStore = defineStore('node', () => {
     return nodeApi.getSpeedTestStatus()
   }
 
-  function setProtocols(list: ProtocolOption[]) { protocols.value = list }
+  function applyConsoleSnapshot(snapshot: ConsoleSnapshot) {
+    protocols.value = snapshot.protocols
+  }
 
   return {
     nodes, protocols, loading, loadingMore, hasMore, filter, activeFilter,
     fetchNodes, loadMoreNodes, speedTest, fetchSpeedTestStatus,
     deleteNode, deleteFailedNodes, activateNode,
-    setProtocols
+    applyConsoleSnapshot
   }
 })

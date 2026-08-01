@@ -1,5 +1,5 @@
 import { LATENCY_MEDIUM_THRESHOLD } from '@/constants'
-import type { OutboundConfig, StreamSettings } from '@/types'
+import type { Transport } from '@/types'
 
 export function formatFileSize(bytes: number): string {
   if (bytes === 0) return '0 B'
@@ -22,18 +22,18 @@ export const formatDateTime = (time?: string) => formatWithOptions(time)
 export const formatClock = (time?: string) =>
   formatWithOptions(time, { hour: '2-digit', minute: '2-digit' })
 
-export function formatTransportDetail(node: { outbound_config?: OutboundConfig }): string {
-  const streamSettings: StreamSettings | undefined = node.outbound_config?.streamSettings
-  if (!streamSettings) return 'TCP'
-  const network = streamSettings.network || 'TCP'
-  const security = streamSettings.security || ''
+export function formatTransportDetail(node: { transport?: Transport }): string {
+  const transport = node.transport
+  if (!transport) return 'TCP'
+  const network = transport.network || 'TCP'
+  const security = transport.security || ''
   const parts = [network]
   if (security && security !== 'auto') parts.push(security)
   return parts.join('+')
 }
 
 export function formatLatency(latency: number, testing = false): string {
-  if (testing && !latency) return '...'
+  if (testing) return '...'
   if (latency === 0) return '-'
   return `${latency}ms`
 }

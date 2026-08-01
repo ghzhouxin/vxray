@@ -1,5 +1,6 @@
 export interface Log {
   id: number
+  level: string
   tag: string
   message: string
   detail: string

@@ -13,6 +13,7 @@ func SetupRoutes(r *gin.Engine, services *service.Container) {
 	subHandler := NewSubscriptionHandler(services)
 	nodeHandler := NewNodeHandler(services)
 	xrayHandler := NewXrayHandler(services)
+	tunHandler := NewTunHandler(services)
 	proxyHandler := NewProxyHandler(services)
 	geoHandler := NewGeoHandler(services)
 	configHandler := NewConfigHandler(services)
@@ -51,6 +52,13 @@ func SetupRoutes(r *gin.Engine, services *service.Container) {
 			xray.GET("/config/default", xrayHandler.GetDefaultConfig)
 			xray.PUT("/config", xrayHandler.SaveConfig)
 			xray.POST("/speedtest/websites", xrayHandler.SpeedTestWebsites)
+		}
+
+		tun := api.Group("/tun")
+		{
+			tun.GET("/status", tunHandler.Status)
+			tun.POST("/enable", tunHandler.Enable)
+			tun.POST("/disable", tunHandler.Disable)
 		}
 
 		proxy := api.Group("/proxy")

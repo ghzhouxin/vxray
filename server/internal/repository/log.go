@@ -32,7 +32,7 @@ func (r *LogRepository) FindByFilter(filter model.LogFilter) ([]model.Log, strin
 	var logs []model.Log
 	query := r.db.Model(&model.Log{})
 	if filter.Level != "" {
-		query = query.Where("json_valid(detail) AND json_extract(detail, '$.level') = ?", filter.Level)
+		query = query.Where("level = ?", filter.Level)
 	}
 	if filter.Tag != "" {
 		query = query.Where("tag = ?", filter.Tag)

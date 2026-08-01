@@ -64,6 +64,8 @@ const triggerLabel = computed(() => {
     return labels.join(' | ')
   }
   const current = typeof props.modelValue === 'string' ? props.modelValue : ''
+  // 空 value 表示「全部/未筛选」，显示 placeholder 而非「全部」选项 label
+  if (!current) return props.placeholder
   return props.options.find(item => item.value === current)?.label || props.placeholder
 })
 

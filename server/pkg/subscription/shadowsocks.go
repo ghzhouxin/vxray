@@ -15,7 +15,7 @@ import (
 type ssConfig struct {
 	Method, Password, Host, Name, PluginOpts string
 	Port                                     int
-	StreamSettings                           types.Map
+	Transport                                types.Transport
 }
 
 func parseSS(nodeURL string) (*types.ParsedNode, error) {
@@ -31,25 +31,18 @@ func parseSS(nodeURL string) (*types.ParsedNode, error) {
 		return nil, fmt.Errorf("ss parse failed: empty method")
 	}
 
-	outbound := types.Map{
-		"address":  config.Host,
-		"port":     config.Port,
-		"method":   config.Method,
-		"password": config.Password,
-	}
-
 	return newParsedNode(
 		config.Name,
 		types.ProtocolShadowsocks,
 		config.Host,
 		config.Port,
 		types.Map{"method": config.Method, "password": config.Password},
-		buildServerOutbound(types.ProtocolShadowsocks, outbound, config.StreamSettings),
+		config.Transport,
 	), nil
 }
 
 func extractSSConfig(encoded string) (*ssConfig, error) {
-	config := &ssConfig{StreamSettings: types.Map{}}
+	config := &ssConfig{}
 
 	if idx := strings.Index(encoded, "#"); idx != -1 {
 		if name, err := url.PathUnescape(encoded[idx+1:]); err == nil {
@@ -192,7 +185,7 @@ func parseSIP003PluginOpts(opts string) url.Values {
 		idx := strings.Index(part, "=")
 		if idx == -1 {
 			if part == "tls" {
-				params.Set("security", SecurityTLS)
+				params.Set("security", types.SecurityTLS)
 			}
 			continue
 		}
@@ -201,9 +194,9 @@ func parseSIP003PluginOpts(opts string) url.Values {
 		case "mode":
 			switch value {
 			case "websocket":
-				params.Set("type", NetworkWS)
+				params.Set("type", types.NetworkWS)
 			case "http":
-				params.Set("type", NetworkTCP)
+				params.Set("type", types.NetworkTCP)
 				params.Set("headerType", "http")
 			}
 		case "host", "path", "sni":
@@ -214,5 +207,5 @@ func parseSIP003PluginOpts(opts string) url.Values {
 }
 
 func applySSPluginSettings(config *ssConfig) {
-	config.StreamSettings = buildStreamSettingsFromQuery(parseSIP003PluginOpts(config.PluginOpts))
+	config.Transport = buildTransport(parseSIP003PluginOpts(config.PluginOpts))
 }

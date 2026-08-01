@@ -11,12 +11,12 @@ import (
 )
 
 type ProxySettings struct {
-	HTTPHost  string `json:"http_host"`
-	HTTPPort  int    `json:"http_port"`
-	HTTPSHost string `json:"https_host"`
-	HTTPSPort int    `json:"https_port"`
-	SOCKSHost string `json:"socks_host"`
-	SOCKSPort int    `json:"socks_port"`
+	HTTPHost  string
+	HTTPPort  int
+	HTTPSHost string
+	HTTPSPort int
+	SOCKSHost string
+	SOCKSPort int
 }
 
 type Options struct {
@@ -31,12 +31,6 @@ type Manager struct {
 }
 
 func NewManager(opts Options) *Manager {
-	if opts.HTTPPort == 0 {
-		opts.HTTPPort = 18889
-	}
-	if opts.SOCKSPort == 0 {
-		opts.SOCKSPort = 18888
-	}
 	return &Manager{
 		settings: ProxySettings{
 			HTTPHost:  "127.0.0.1",

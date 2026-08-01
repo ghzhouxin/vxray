@@ -44,35 +44,17 @@ func (m *Manager) addFileInfo(info map[string]any, name, path string) {
 }
 
 func (m *Manager) DownloadAll(ctx context.Context) error {
-	if err := m.downloadGeoIP(ctx); err != nil {
-		return fmt.Errorf("download geoip: %w", err)
-	}
-	if err := m.downloadGeoSite(ctx); err != nil {
-		return fmt.Errorf("download geosite: %w", err)
-	}
-	return nil
-}
-
-func (m *Manager) downloadGeoIP(ctx context.Context) error {
-	return m.downloadGeoFile(ctx, m.cfg.GeoUpdateURL, true)
-}
-
-func (m *Manager) downloadGeoSite(ctx context.Context) error {
-	return m.downloadGeoFile(ctx, m.cfg.GeoUpdateURL, false)
-}
-
-func (m *Manager) downloadGeoFile(ctx context.Context, getURLs func() (string, string, bool), isIP bool) error {
-	geoIP, geoSite, ok := getURLs()
+	geoIP, geoSite, ok := m.cfg.GeoUpdateURL()
 	if !ok {
 		return fmt.Errorf("unknown geo source")
 	}
-	geoURL := geoIP
-	savePath := m.cfg.GeoIPPath()
-	if !isIP {
-		geoURL = geoSite
-		savePath = m.cfg.GeoSitePath()
+	if err := m.download(ctx, geoIP, m.cfg.GeoIPPath()); err != nil {
+		return fmt.Errorf("download geoip: %w", err)
 	}
-	return m.download(ctx, geoURL, savePath)
+	if err := m.download(ctx, geoSite, m.cfg.GeoSitePath()); err != nil {
+		return fmt.Errorf("download geosite: %w", err)
+	}
+	return nil
 }
 
 func (m *Manager) download(ctx context.Context, url, path string) error {
@@ -100,11 +82,15 @@ func (m *Manager) download(ctx context.Context, url, path string) error {
 		return fmt.Errorf("create file: %w", err)
 	}
 
-	_, err = io.Copy(out, resp.Body)
-	out.Close()
-	if err != nil {
+	_, copyErr := io.Copy(out, resp.Body)
+	closeErr := out.Close()
+	if copyErr != nil {
 		os.Remove(tmpFile)
-		return fmt.Errorf("write file: %w", err)
+		return fmt.Errorf("write file: %w", copyErr)
+	}
+	if closeErr != nil {
+		os.Remove(tmpFile)
+		return fmt.Errorf("close file: %w", closeErr)
 	}
 
 	if err := os.Rename(tmpFile, path); err != nil {

@@ -1,6 +1,7 @@
 export { useSubscriptionStore } from './subscription'
 export { useNodeStore } from './node'
 export { useXrayStore } from './xray'
+export { useTunStore } from './tun'
 export { useGeoStore } from './geo'
 export { useProxyStore } from './proxy'
 export { useSettingsStore } from './settings'

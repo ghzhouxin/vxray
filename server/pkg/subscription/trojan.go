@@ -25,24 +25,20 @@ func parseTrojan(nodeURL string) (*types.ParsedNode, error) {
 		return nil, fmt.Errorf("trojan: empty host")
 	}
 	port := normalizePort(portFromAny(u.Port()))
-	name := defaultString(u.Fragment, host)
+	name := firstNonEmpty(u.Fragment, host)
 	query := u.Query()
 
-	streamSettings := types.Map{}
-	network := normalizeNetwork(defaultString(query.Get("type"), NetworkTCP))
-	if network == NetworkTCP && query.Get("ws") == "1" {
-		network = NetworkWS
+	// 兼容 legacy ws=1 标志：覆盖 type 缺失或 raw 时的传输类型
+	if query.Get("ws") == "1" {
+		if t := query.Get("type"); t == "" || t == types.NetworkRaw {
+			query.Set("type", types.NetworkWS)
+		}
 	}
-	streamSettings["network"] = network
-	switch security := query.Get("security"); {
-	case security != "" && security != SecurityNone:
-		streamSettings["security"] = security
-		applySecuritySettings(&streamSettings, security, query)
-	case security == "":
-		streamSettings["security"] = SecurityTLS // Trojan defaults to TLS
-		applySecuritySettings(&streamSettings, SecurityTLS, query)
+	transport := buildTransport(query)
+	// Trojan 默认 TLS（query 未指定 security 时）
+	if transport.Security == "" {
+		transport.Security = types.SecurityTLS
 	}
-	applyNetworkSettingsFromValues(&streamSettings, network, query.Get)
 
 	return newParsedNode(
 		name,
@@ -50,10 +46,6 @@ func parseTrojan(nodeURL string) (*types.ParsedNode, error) {
 		host,
 		port,
 		types.Map{"password": password},
-		buildServerOutbound(
-			types.ProtocolTrojan,
-			types.Map{"address": host, "port": port, "password": password},
-			streamSettings,
-		),
+		transport,
 	), nil
 }

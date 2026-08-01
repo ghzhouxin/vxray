@@ -35,7 +35,7 @@
           <td class="node-endpoint" :title="`${row.address}:${row.port}`">{{ row.address }}:{{ row.port }}</td>
           <td class="node-protocol">{{ row.protocol_label }}</td>
           <td class="node-transport" :title="row.transportLabel">{{ row.transportLabel }}</td>
-          <td class="node-latency" :class="getLatencyClass(row.latency)">{{ formatLatency(row.latency) }}</td>
+          <td class="node-latency" :class="getLatencyClass(row.latency, row.id === testingNodeId)">{{ formatLatency(row.latency, row.id === testingNodeId) }}</td>
           <td class="actions-col" @click.stop>
             <IconButton class="row-action" tooltip="测速" :disabled="speedTestRunning" tone="primary" :size="ICON_BUTTON_SIZE_SM" @click="emit('speed-test-node', row)">
               <Aim />
@@ -76,6 +76,11 @@ const xrayStore = useXrayStore()
 const operationStore = useOperationStore()
 function isCurrent(node: Node) { return xrayStore.isRunning && xrayStore.currentNode?.id === node.id }
 const speedTestRunning = computed(() => operationStore.running)
+const testingNodeId = computed(() => {
+  const active = operationStore.active
+  if (active?.testing && active.status === 'running' && active.node_id != null) return active.node_id
+  return null
+})
 
 const emit = defineEmits<{
   'use-node': [node: Node]

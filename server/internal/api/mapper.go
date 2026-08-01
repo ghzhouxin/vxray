@@ -7,15 +7,12 @@ import (
 	"v2ray-server/internal/service"
 )
 
-// toNodeInfo converts a single node to its DTO representation.
-func toNodeInfo(node *model.Node) *dto.NodeInfo {
+// toNodeInfo converts a single node to its service-level NodeInfo projection.
+func toNodeInfo(node *model.Node) *service.NodeInfo {
 	if node == nil {
 		return nil
 	}
 	infos := service.ToNodeInfos([]*model.Node{node})
-	if len(infos) == 0 {
-		return nil
-	}
 	return &infos[0]
 }
 
@@ -43,6 +40,7 @@ func toSubscriptionDTOs(items []model.Subscription) []dto.SubscriptionDTO {
 func toLogDTO(m model.Log) dto.LogDTO {
 	return dto.LogDTO{
 		ID:        m.ID,
+		Level:     m.Level,
 		Message:   m.Message,
 		Tag:       m.Tag,
 		Detail:    m.Detail,

@@ -27,7 +27,7 @@ func LatencyStatus(latency int64) string {
 
 const (
 	DefaultLogPageSize = 50
-	NodeBatchSize      = 100
+	NodeBatchSize      = 50 // SQLite 变量数限制 999，每 Node 13 列，50×13=650 安全
 )
 
 const (
@@ -36,7 +36,7 @@ const (
 
 const (
 	ShutdownTimeout    = 5 * time.Second
-	ClashTopNodesLimit = 50
+	ClashTopNodesLimit = 32
 	ProxyHTTPPort      = 18889
 	ProxySOCKSPort     = 18888
 )
@@ -46,11 +46,18 @@ const (
 	TagSubscription = "subs"
 	TagXray         = "xray"
 	TagGeo          = "geo"
-	TagSystem       = "system"
+	TagTun          = "tun"
 )
 
-var LogLevels = []string{"debug", "info", "warn", "error"}
+const (
+	LevelDebug = "debug"
+	LevelInfo  = "info"
+	LevelWarn  = "warn"
+	LevelError = "error"
+)
 
-var LogTags = []string{TagSpeedtest, TagSubscription, TagXray, TagGeo, TagSystem}
+var LogLevels = []string{LevelDebug, LevelInfo, LevelWarn, LevelError}
+
+var LogTags = []string{TagSpeedtest, TagSubscription, TagXray, TagGeo, TagTun}
 
 var NodeProtocols = []string{"vless", "vmess", "trojan", "shadowsocks"}

@@ -7,21 +7,77 @@ import (
 	"v2ray-server/pkg/types"
 )
 
-func buildTLSSettings(sni, fp string, alpn any) types.Map {
-	tlsSettings := types.Map{}
+func buildTLS(query url.Values) *types.TLSConfig {
+	sni := resolveSNI(query)
+	ech := query.Get("ech")
+	vcn := query.Get("vcn")
+	pcs := query.Get("pcs")
+	if sni == "" && query.Get("fp") == "" && query.Get("alpn") == "" && ech == "" && vcn == "" && pcs == "" {
+		return nil
+	}
+	cfg := &types.TLSConfig{}
 	if sni != "" {
-		tlsSettings["serverName"] = sni
+		cfg.ServerName = sni
 	}
-	if fp != "" {
-		tlsSettings["fingerprint"] = fp
+	if fp := query.Get("fp"); fp != "" {
+		cfg.Fingerprint = fp
 	}
-	if alpnList := normalizeALPN(alpn); len(alpnList) > 0 {
-		tlsSettings["alpn"] = alpnList
+	if alpnList := normalizeALPN(query.Get("alpn")); len(alpnList) > 0 {
+		cfg.ALPN = alpnList
 	}
-	return tlsSettings
+	if ech != "" {
+		cfg.ECHConfigList = ech
+	}
+	if vcn != "" {
+		cfg.VerifyPeerCertByName = vcn
+	}
+	if pcs != "" {
+		cfg.PinnedPeerCertSha256 = pcs
+	}
+	return cfg
 }
 
-// normalizeALPN 处理 query（string）或 VMess JSON（string/[]any/[]string）的 alpn
+func buildReality(query url.Values) *types.RealityConfig {
+	cfg := &types.RealityConfig{}
+	hasAny := false
+	if sni := resolveSNI(query); sni != "" {
+		cfg.ServerName = sni
+		hasAny = true
+	}
+	if v := firstNonEmpty(query.Get("publicKey"), query.Get("pbk")); v != "" {
+		cfg.PublicKey = v
+		hasAny = true
+	}
+	if v := firstNonEmpty(query.Get("shortId"), query.Get("sid")); v != "" {
+		cfg.ShortID = v
+		hasAny = true
+	}
+	if v := query.Get("spx"); v != "" {
+		cfg.SpiderX = v
+		hasAny = true
+	}
+	if v := query.Get("pqv"); v != "" {
+		cfg.Mldsa65Verify = v
+		hasAny = true
+	}
+	if v := firstNonEmpty(query.Get("fingerprint"), query.Get("fp")); v != "" {
+		cfg.Fingerprint = v
+		hasAny = true
+	} else {
+		cfg.Fingerprint = DefaultRealityFingerprint
+	}
+	if !hasAny {
+		return nil
+	}
+	return cfg
+}
+
+// resolveSNI: sni → peer → host
+func resolveSNI(query url.Values) string {
+	return firstNonEmpty(query.Get("sni"), query.Get("peer"), query.Get("host"))
+}
+
+// normalizeALPN 处理 query（string）或 VMess JSON（string/[]any）的 alpn
 func normalizeALPN(v any) []string {
 	var raw []string
 	switch a := v.(type) {
@@ -38,8 +94,6 @@ func normalizeALPN(v any) []string {
 				raw = append(raw, s)
 			}
 		}
-	case []string:
-		raw = a
 	default:
 		return nil
 	}
@@ -50,56 +104,4 @@ func normalizeALPN(v any) []string {
 		}
 	}
 	return result
-}
-
-// resolveSNI: sni → peer → host（VMess JSON 用 resolveVMessSNI，无 peer）
-func resolveSNI(query url.Values) string {
-	return firstNonEmpty(query.Get("sni"), query.Get("peer"), query.Get("host"))
-}
-
-// buildTLSSettingsFromQuery 不解析 allowInsecure：xray-core v26 会 PrintRemovedFeatureError。
-// 用 vcn/pcs 替代证书验证。
-func buildTLSSettingsFromQuery(query url.Values) types.Map {
-	tlsSettings := buildTLSSettings(resolveSNI(query), query.Get("fp"), query.Get("alpn"))
-	if ech := query.Get("ech"); ech != "" {
-		tlsSettings["echConfigList"] = ech
-	}
-	applyTLSCertVerification(tlsSettings, query.Get("vcn"), query.Get("pcs"))
-	return tlsSettings
-}
-
-// applyTLSCertVerification 设置证书固定字段（vcn/pcs）
-func applyTLSCertVerification(tlsSettings types.Map, vcn, pcs string) {
-	if vcn != "" {
-		tlsSettings["verifyPeerCertByName"] = vcn
-	}
-	if pcs != "" {
-		tlsSettings["pinnedPeerCertSha256"] = pcs
-	}
-}
-
-func buildRealitySettings(query url.Values) types.Map {
-	realitySettings := types.Map{}
-	if sni := resolveSNI(query); sni != "" {
-		realitySettings["serverName"] = sni
-	}
-	if v := firstNonEmpty(query.Get("publicKey"), query.Get("pbk")); v != "" {
-		realitySettings["publicKey"] = v
-	}
-	if v := firstNonEmpty(query.Get("shortId"), query.Get("sid")); v != "" {
-		realitySettings["shortId"] = v
-	}
-	if v := firstNonEmpty(query.Get("fingerprint"), query.Get("fp")); v != "" {
-		realitySettings["fingerprint"] = v
-	} else {
-		realitySettings["fingerprint"] = DefaultRealityFingerprint
-	}
-	if v := firstNonEmpty(query.Get("spiderX"), query.Get("spx")); v != "" {
-		realitySettings["spiderX"] = v
-	}
-	// mldsa65Verify: REALITY 后量子验证（xray-core REALITYConfig.Mldsa65Verify）
-	if v := firstNonEmpty(query.Get("mldsa65Verify"), query.Get("pqv")); v != "" {
-		realitySettings["mldsa65Verify"] = v
-	}
-	return realitySettings
 }

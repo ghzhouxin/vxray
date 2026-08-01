@@ -1,5 +1,5 @@
 import { reactive } from 'vue'
-import { useNodeStore, useProxyStore, useSubscriptionStore, useXrayStore } from '@/stores'
+import { useNodeStore, useProxyStore, useSubscriptionStore, useTunStore, useXrayStore } from '@/stores'
 import { consoleApi } from '@/api'
 import type { ConsoleSnapshot } from '@/types'
 
@@ -11,20 +11,22 @@ export function useConsoleRefresh(options: {
   const nodeStore = useNodeStore()
   const subscriptionStore = useSubscriptionStore()
   const proxyStore = useProxyStore()
+  const tunStore = useTunStore()
   const nodeSummary = reactive({ all: 0, available: 0, pending: 0, timeout: 0 })
   const runtimePorts = reactive({ http: 0, socks: 0 })
 
   function applySnapshot(snapshot: ConsoleSnapshot) {
     xrayStore.applyConsoleSnapshot(snapshot)
-    subscriptionStore.setSubscriptions(snapshot.subscriptions)
-    nodeStore.setProtocols(snapshot.protocols || [])
-    proxyStore.setProxyStatus(snapshot.runtime.proxy.enabled)
+    tunStore.applyConsoleSnapshot(snapshot)
+    subscriptionStore.applyConsoleSnapshot(snapshot)
+    nodeStore.applyConsoleSnapshot(snapshot)
+    proxyStore.applyConsoleSnapshot(snapshot)
     nodeSummary.all = snapshot.node_summary.all
     nodeSummary.available = snapshot.node_summary.available
     nodeSummary.pending = snapshot.node_summary.pending
     nodeSummary.timeout = snapshot.node_summary.timeout
-    runtimePorts.http = snapshot.runtime.ports.http || snapshot.runtime.proxy.http_port || 0
-    runtimePorts.socks = snapshot.runtime.ports.socks || snapshot.runtime.proxy.socks_port || 0
+    runtimePorts.http = snapshot.runtime.proxy.http_port
+    runtimePorts.socks = snapshot.runtime.proxy.socks_port
     options.applyLogsSnapshot(snapshot)
   }
 

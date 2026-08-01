@@ -2,6 +2,7 @@ package api
 
 import (
 	"github.com/gin-gonic/gin"
+	"v2ray-server/internal/dto"
 	"v2ray-server/internal/service"
 	"v2ray-server/pkg/response"
 )
@@ -15,9 +16,7 @@ func NewProxyHandler(services *service.Container) *ProxyHandler {
 }
 
 func (h *ProxyHandler) Toggle(c *gin.Context) {
-	var req struct {
-		Enabled bool `json:"enabled"`
-	}
+	var req dto.ProxyToggleRequest
 	if !bindJSON(c, &req) {
 		return
 	}

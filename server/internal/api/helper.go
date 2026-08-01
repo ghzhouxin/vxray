@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"log"
 	"strconv"
 	"time"
 
@@ -42,7 +43,8 @@ func handleError(c *gin.Context, err error) bool {
 		response.NotFound(c, "resource not found")
 		return true
 	}
-	response.InternalError(c, err.Error())
+	log.Printf("api: internal error: %v", err)
+	response.InternalError(c, "internal error")
 	return true
 }
 

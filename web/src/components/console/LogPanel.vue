@@ -46,9 +46,9 @@
       <div v-if="loading" class="log-state">加载中...</div>
       <div v-else-if="!logs.length" class="log-state">暂无日志</div>
       <template v-else>
-        <div v-for="log in viewLogs" :key="log.id" class="log-line">
+        <div v-for="log in logs" :key="log.id" class="log-line">
           <span class="log-time">{{ formatClock(log.updated_at || log.created_at) }}</span>
-          <span class="log-level" :class="log.detailLevel || 'none'">{{ log.detailLevel || '-' }}</span>
+          <span class="log-level" :class="log.level || 'none'">{{ log.level || '-' }}</span>
           <span class="log-tag" :title="log.tag">{{ log.tag }}</span>
           <span class="log-message" :title="log.detail">{{ log.message }}</span>
         </div>
@@ -112,30 +112,10 @@ const levelOptions = computed(() => [
   { label: ALL_OPTION_LABEL, value: ALL_OPTION_VALUE },
   ...props.levels.map(l => ({ label: l, value: l }))
 ])
-const levelCache = new WeakMap<Log, string>()
-const viewLogs = computed(() =>
-  props.logs.map(log => ({
-    ...log,
-    detailLevel: resolveDetailLevel(log)
-  }))
-)
 const tagOptions = computed(() => [
   { label: ALL_OPTION_LABEL, value: ALL_OPTION_VALUE },
   ...props.tags.map(t => ({ label: t, value: t }))
 ])
-
-function resolveDetailLevel(log: Log) {
-  if (!log.detail) return ''
-  if (levelCache.has(log)) return levelCache.get(log)!
-  try {
-    const parsed = JSON.parse(log.detail) as { level?: string }
-    const result = parsed.level || ''
-    levelCache.set(log, result)
-    return result
-  } catch {
-    return ''
-  }
-}
 
 function handleHeaderClick() {
   emit('update:collapsed', !props.collapsed)

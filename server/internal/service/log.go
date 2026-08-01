@@ -19,8 +19,8 @@ type LogService struct {
 }
 
 type OperationLog struct {
-	ID   string
-	logs *LogService
+	ID     string
+	logSvc *LogService
 }
 
 var operationSeq uint64
@@ -29,10 +29,7 @@ func NewLogService(db *gorm.DB) *LogService {
 	return &LogService{repo: repository.NewLogRepository(db)}
 }
 
-func (s *LogService) Create(tag, message string, detail any) error {
-	return s.createEntry("", tag, message, detail)
-}
-
+// marshalDetail 序列化 detail 为 JSON 字符串；nil 返回空串。
 func marshalDetail(detail any) string {
 	if detail == nil {
 		return ""
@@ -44,59 +41,65 @@ func marshalDetail(detail any) string {
 	return string(data)
 }
 
-func (s *LogService) createEntry(operationID, tag, message string, detail any) error {
+// create 写入一条日志。level 为 debug/info/warn/error。
+func (s *LogService) create(operationID, tag, level, message string, detail any) error {
 	now := time.Now()
-	log := model.Log{
+	entry := model.Log{
 		OperationID: operationID,
+		Level:       level,
 		Tag:         tag,
 		Message:     message,
 		Detail:      marshalDetail(detail),
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
-
-	return s.repo.Create(&log)
+	return s.repo.Create(&entry)
 }
 
+// LogLevel 写入指定级别的日志。xray 进程日志回调走这里。
 func (s *LogService) LogLevel(tag, level, message string, detail any) error {
-	return s.Create(tag, message, mergeLogDetail(level, detail))
+	return s.create("", tag, level, message, detail)
 }
 
 func (s *LogService) Info(tag, message string, detail any) error {
-	return s.LogLevel(tag, "info", message, detail)
+	return s.LogLevel(tag, constants.LevelInfo, message, detail)
 }
 
 func (s *LogService) Error(tag, message string, detail any) error {
-	return s.LogLevel(tag, "error", message, detail)
+	return s.LogLevel(tag, constants.LevelError, message, detail)
 }
 
+// --- Tagged logger ---
+
 type TaggedLogger struct {
-	logs *LogService
-	tag  string
+	logSvc *LogService
+	tag    string
 }
 
 func (s *LogService) NewTaggedLogger(tag string) *TaggedLogger {
-	return &TaggedLogger{logs: s, tag: tag}
+	return &TaggedLogger{logSvc: s, tag: tag}
 }
 
-func (l *TaggedLogger) Info(message string, detail map[string]any) {
-	if l.logs != nil {
-		_ = l.logs.Info(l.tag, message, detail)
+func (l *TaggedLogger) Info(message string, detail any) {
+	if l.logSvc != nil {
+		_ = l.logSvc.Info(l.tag, message, detail)
 	}
 }
 
-func (l *TaggedLogger) Error(message string, detail map[string]any) {
-	if l.logs != nil {
-		_ = l.logs.Error(l.tag, message, detail)
+func (l *TaggedLogger) Error(message string, detail any) {
+	if l.logSvc != nil {
+		_ = l.logSvc.Error(l.tag, message, detail)
 	}
 }
+
+// --- Operations（长任务单行可变记录，operation_id 索引但不暴露前端）---
 
 func (s *LogService) StartOperation(tag, message string, detail any) (*OperationLog, error) {
 	operationID := fmt.Sprintf("%d-%d", time.Now().UnixNano(), atomic.AddUint64(&operationSeq, 1))
-	if err := s.createEntry(operationID, tag, message, mergeLogDetail("info", detail)); err != nil {
+	if err := s.create(operationID, tag, constants.LevelInfo, message, detail); err != nil {
 		return nil, err
 	}
-	return &OperationLog{ID: operationID, logs: s}, nil
+	return &OperationLog{ID: operationID, logSvc: s}, nil
 }
 
 func (s *LogService) RunOperation(tag, message string, detail any, fn func() error) error {
@@ -117,8 +120,9 @@ func (s *LogService) RunOperation(tag, message string, detail any, fn func() err
 	return nil
 }
 
-func (s *LogService) updateOperation(operationID, message string, detail any) error {
+func (s *LogService) updateOperation(operationID, level, message string, detail any) error {
 	updates := map[string]any{
+		"level":      level,
 		"message":    message,
 		"updated_at": time.Now(),
 	}
@@ -129,22 +133,27 @@ func (s *LogService) updateOperation(operationID, message string, detail any) er
 }
 
 func (o *OperationLog) Update(message string, detail any) error {
-	if o == nil || o.logs == nil || o.ID == "" {
+	if o == nil {
 		return nil
 	}
-	return o.logs.updateOperation(o.ID, message, mergeLogDetail("info", detail))
+	return o.logSvc.updateOperation(o.ID, constants.LevelInfo, message, detail)
 }
 
 func (o *OperationLog) Success(message string, detail any) error {
-	return o.Update(message, detail)
+	if o == nil {
+		return nil
+	}
+	return o.logSvc.updateOperation(o.ID, constants.LevelInfo, message, detail)
 }
 
 func (o *OperationLog) Fail(message string, detail any) error {
-	if o == nil || o.logs == nil || o.ID == "" {
+	if o == nil {
 		return nil
 	}
-	return o.logs.updateOperation(o.ID, message, mergeLogDetail("error", detail))
+	return o.logSvc.updateOperation(o.ID, constants.LevelError, message, detail)
 }
+
+// --- Read ---
 
 func (s *LogService) List(filter model.LogFilter) ([]model.Log, string, error) {
 	return s.repo.FindByFilter(filter)
@@ -154,29 +163,5 @@ func (s *LogService) Clear() (int64, error) {
 	return s.repo.DeleteAll()
 }
 
-func (s *LogService) GetTags() []string {
-	return constants.LogTags
-}
-
-func (s *LogService) GetLevels() []string {
-	return constants.LogLevels
-}
-
-func mergeLogDetail(level string, detail any) map[string]any {
-	merged := map[string]any{"level": level}
-	switch value := detail.(type) {
-	case nil:
-		return merged
-	case map[string]any:
-		for k, v := range value {
-			merged[k] = v
-		}
-	case map[string]string:
-		for k, v := range value {
-			merged[k] = v
-		}
-	default:
-		merged["data"] = value
-	}
-	return merged
-}
+func (s *LogService) GetTags() []string   { return constants.LogTags }
+func (s *LogService) GetLevels() []string { return constants.LogLevels }

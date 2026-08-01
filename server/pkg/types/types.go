@@ -31,13 +31,13 @@ func (m *Map) Scan(value any) error {
 }
 
 type ParsedNode struct {
-	Name           string
-	Protocol       string
-	Address        string
-	Port           int
-	RawURL         string
-	RawConfig      Map
-	OutboundConfig Map
+	Name      string
+	Protocol  string
+	Address   string
+	Port      int
+	RawURL    string
+	RawConfig Map
+	Transport Transport
 }
 
 type ParseResult struct {
@@ -72,6 +72,18 @@ const (
 	ProtocolVLESS       = "vless"
 	ProtocolTrojan      = "trojan"
 	ProtocolShadowsocks = "shadowsocks"
+)
+
+// Network / Security 传输层常量，作为 subscription/clash/xray 三方的单一真源。
+const (
+	NetworkTCP         = "tcp"
+	NetworkWS          = "ws"
+	NetworkGRPC        = "grpc"
+	NetworkHTTPUpgrade = "httpupgrade"
+	NetworkXHTTP       = "xhttp"
+	NetworkRaw         = "raw" // xray-core v25+ alias for tcp
+	SecurityTLS        = "tls"
+	SecurityReality    = "reality"
 )
 
 func ProtocolLabel(protocol string) string {

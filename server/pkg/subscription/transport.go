@@ -9,86 +9,74 @@ import (
 	"v2ray-server/pkg/types"
 )
 
-func buildWSSettings(path, host string) types.Map {
-	settings := types.Map{}
-	if path != "" {
-		settings["path"] = path
+func buildWebSocket(path, host string) *types.WebSocketConfig {
+	if path == "" {
+		path = "/" // WS/HTTPUpgrade 必须有 path，默认 "/"
 	}
+	return &types.WebSocketConfig{Path: path, Host: host}
+}
+
+func buildGRPC(serviceName, authority string, multiMode bool) *types.GRPCConfig {
+	if serviceName == "" && authority == "" && !multiMode {
+		return nil
+	}
+	return &types.GRPCConfig{ServiceName: serviceName, Authority: authority, MultiMode: multiMode}
+}
+
+func buildXHTTP(path, host, mode, extra, xPaddingBytes, xPaddingKey string) *types.XHTTPConfig {
+	if path == "" {
+		path = "/" // XHTTP 必须有 path，默认 "/"
+	}
+	cfg := &types.XHTTPConfig{Path: path}
 	if host != "" {
-		settings["host"] = host
+		cfg.Host = host
 	}
-	return settings
-}
-
-func buildGRPCSettings(serviceName, authority, mode string) types.Map {
-	settings := types.Map{}
-	if serviceName != "" {
-		settings["serviceName"] = serviceName
-	}
-	if authority != "" {
-		settings["authority"] = authority
-	}
-	if mode == "multi" {
-		settings["multiMode"] = true
-	}
-	return settings
-}
-
-func buildXHTTPSettingsFromValues(path, host, mode, extra, xPaddingBytes string) types.Map {
-	settings := types.Map{}
 	if mode != "" {
-		settings["mode"] = mode
+		cfg.Mode = mode
 	}
-	if path != "" {
-		settings["path"] = path
-	}
-	if host != "" {
-		settings["host"] = host
-	}
-	// XHTTP 高级配置（v2rayN+ 格式）：xray-core 用 URL 参数覆盖 extra 的 Host/Path/Mode
 	if extra != "" {
 		var extraMap types.Map
 		if json.Unmarshal([]byte(extra), &extraMap) == nil {
-			settings["extra"] = extraMap
+			cfg.Extra = extraMap
 		}
 	}
 	if pb := parseXPaddingBytes(xPaddingBytes); pb != nil {
-		settings["xPaddingBytes"] = pb
+		cfg.XPaddingBytes = pb
 	}
-	return settings
+	if xPaddingKey != "" {
+		cfg.XPaddingKey = xPaddingKey
+	}
+	return cfg
 }
 
-func buildTCPSettings(path, host string) types.Map {
-	request := types.Map{}
-	if path != "" {
-		request["path"] = []string{path}
+func buildTCP(headerType, path, host string) *types.TCPConfig {
+	if headerType != "http" {
+		return nil
 	}
-	if host != "" {
-		request["headers"] = types.Map{"Host": []string{host}}
-	}
-	return types.Map{
-		"header": types.Map{"type": "http", "request": request},
-	}
+	return &types.TCPConfig{HeaderType: headerType, Path: path, Host: host}
 }
 
-// mergeEarlyData 把顶层 query 的 ed 参数合并到 wsSettings.path 的 query 中。
+// mergeEarlyData 把顶层 query 的 ed 参数合并到 path 的 query 中。
 // xray-core WebSocketConfig.Build() 从 path 解析 ed（early data），
 // 顶层 query 的 ed 会被忽略，导致 early data 失效。
-// 若 path 已含 ed 则不覆盖。参考 xray-core infra/conf/transport_method.go WebSocketConfig.Build()。
+// 若 path 已含 ed 则不覆盖；path 为空时默认 "/" 再合并。
+// 参考 xray-core infra/conf/transport_method.go WebSocketConfig.Build()。
 func mergeEarlyData(path, ed string) string {
-	if ed == "" || path == "" {
+	if ed == "" {
 		return path
+	}
+	if path == "" {
+		path = "/"
 	}
 	if u, err := url.Parse(path); err == nil {
 		q := u.Query()
 		if q.Get("ed") != "" {
-			return path // path 已含 ed，不覆盖
+			return path
 		}
 		q.Set("ed", ed)
 		u.RawQuery = q.Encode()
 		return u.String()
 	}
-	// url.Parse 失败时简单追加
 	if strings.Contains(path, "?") {
 		return path + "&ed=" + ed
 	}

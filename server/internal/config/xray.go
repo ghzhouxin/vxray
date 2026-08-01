@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
-	"strings"
 
 	"v2ray-server/pkg/types"
 	"v2ray-server/pkg/utils"
@@ -117,9 +116,8 @@ func (s *State) XrayPorts() (*XrayPorts, error) {
 }
 
 func (s *State) UpdateXrayOutbound(outbound types.Map) error {
-	// 深拷贝避免污染调用方的 outbound（normalizeWSSettings 和 tag 赋值会修改 map）
-	outbound = deepCopyMap(outbound)
-	normalizeWSSettings(outbound)
+	// 浅拷贝避免污染调用方的 outbound（tag 赋值会修改 map 顶层 key）
+	outbound = copyMap(outbound)
 	return s.UpdateXrayConfig(func(cfg map[string]any) error {
 		outbounds, ok := cfg["outbounds"].([]any)
 		if !ok {
@@ -153,63 +151,17 @@ func (s *State) UpdateXrayOutbound(outbound types.Map) error {
 	})
 }
 
-// deepCopyMap 通过 JSON 序列化实现 map[string]any 的深拷贝，避免共享底层引用。
-func deepCopyMap(src types.Map) types.Map {
+// copyMap 浅拷贝 map[string]any。
+// UpdateXrayOutbound 只新增顶层 key（"tag"），嵌套 map 不修改，浅拷贝即可避免污染调用方的 outbound。
+func copyMap(src types.Map) types.Map {
 	if src == nil {
 		return nil
-	}
-	data, err := json.Marshal(src)
-	if err == nil {
-		var dst types.Map
-		if err := json.Unmarshal(data, &dst); err == nil {
-			return dst
-		}
 	}
 	dst := make(types.Map, len(src))
 	for k, v := range src {
 		dst[k] = v
 	}
 	return dst
-}
-
-// normalizeWSSettings 将废弃的 wsSettings.headers.Host 迁移到顶层 host 字段。
-// xray-core v26 在 Build() 中自动迁移并打印 deprecation 警告；此处预先迁移消除警告。
-// 幂等：已是新格式的数据不会受影响。
-func normalizeWSSettings(outbound types.Map) {
-	streamSettings, ok := outbound["streamSettings"].(types.Map)
-	if !ok {
-		return
-	}
-	wsSettings, ok := streamSettings["wsSettings"].(types.Map)
-	if !ok {
-		return
-	}
-	headers, ok := wsSettings["headers"].(types.Map)
-	if !ok {
-		return
-	}
-	if host, ok := popHeaderHost(headers); ok {
-		if existingHost, exists := wsSettings["host"]; !exists || existingHost == "" {
-			wsSettings["host"] = host
-		}
-	}
-	if len(headers) == 0 {
-		delete(wsSettings, "headers")
-	}
-}
-
-// popHeaderHost finds and removes the Host header (case-insensitive) from wsSettings.headers,
-// returning its value. xray-core v26 deprecates headers.Host in favor of top-level host field.
-func popHeaderHost(headers types.Map) (string, bool) {
-	for k, v := range headers {
-		if strings.ToLower(k) == "host" {
-			if hostStr, ok := v.(string); ok {
-				delete(headers, k)
-				return hostStr, true
-			}
-		}
-	}
-	return "", false
 }
 
 func (s *State) ActiveNodeID() uint {

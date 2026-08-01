@@ -6,12 +6,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"time"
 
 	"v2ray-server/internal/constants"
-	"v2ray-server/internal/dto"
 	"v2ray-server/internal/model"
 	"v2ray-server/internal/repository"
 	"v2ray-server/pkg/subscription"
@@ -24,22 +22,22 @@ import (
 type SubscriptionService struct {
 	repo     *repository.SubscriptionRepository
 	nodeRepo *repository.NodeRepository
-	db       *gorm.DB
-	parser   *subscription.Service
 	logSvc   *LogService
 	logger   *TaggedLogger
 	client   *http.Client
 }
 
-type BatchUpdateResult = dto.BatchUpdateResult
-type ParseStats = dto.ParseStats
+// BatchUpdateResult 汇总批量订阅更新的结果。
+type BatchUpdateResult struct {
+	Total   int `json:"total"`
+	Success int `json:"success"`
+	Failed  int `json:"failed"`
+}
 
 func NewSubscriptionService(db *gorm.DB, logger *LogService, nodeRepo *repository.NodeRepository) *SubscriptionService {
 	return &SubscriptionService{
 		repo:     repository.NewSubscriptionRepository(db),
 		nodeRepo: nodeRepo,
-		db:       db,
-		parser:   subscription.NewService(),
 		logSvc:   logger,
 		logger:   logger.NewTaggedLogger(constants.TagSubscription),
 		client:   utils.LongRunningHTTPClient(),
@@ -110,7 +108,7 @@ func (s *SubscriptionService) UpdateNodesBatch(ctx context.Context, ids []uint) 
 
 	result := &BatchUpdateResult{Total: len(targetIDs)}
 	for _, id := range targetIDs {
-		if _, err := s.UpdateNodes(ctx, id); err != nil {
+		if err := s.UpdateNodes(ctx, id); err != nil {
 			result.Failed++
 			continue
 		}
@@ -119,24 +117,24 @@ func (s *SubscriptionService) UpdateNodesBatch(ctx context.Context, ids []uint) 
 	return result, nil
 }
 
-func (s *SubscriptionService) UpdateNodes(ctx context.Context, id uint) (*ParseStats, error) {
+func (s *SubscriptionService) UpdateNodes(ctx context.Context, id uint) error {
 	sub, err := s.Get(id)
 	if err != nil {
 		s.logger.Error("获取订阅失败", map[string]any{"id": id, "error": err.Error()})
-		return nil, err
+		return err
 	}
 	var op *OperationLog
 	if s.logSvc != nil {
 		var opErr error
 		op, opErr = s.logSvc.StartOperation(constants.TagSubscription, "开始更新订阅", map[string]any{"id": id, "name": sub.Name})
 		if opErr != nil {
-			log.Printf("SubscriptionService: 启动操作日志失败 id=%d name=%s err=%v", id, sub.Name, opErr)
+			s.logger.Error("启动操作日志失败", map[string]any{"id": id, "name": sub.Name, "error": opErr.Error()})
 		}
 	}
 
 	body, err := s.fetchContent(ctx, sub.URL, id)
 	if err != nil {
-		return nil, s.failUpdate(id, op, "订阅更新失败", err)
+		return s.failUpdate(id, op, "订阅更新失败", err)
 	}
 	if op != nil {
 		_ = op.Update("订阅内容拉取成功", map[string]any{"id": id, "name": sub.Name, "bytes": len(body)})
@@ -145,7 +143,7 @@ func (s *SubscriptionService) UpdateNodes(ctx context.Context, id uint) (*ParseS
 	contentHash := s.calculateHash(body)
 	unchanged, err := s.contentUnchanged(sub, contentHash, id)
 	if err != nil {
-		return nil, s.failUpdate(id, op, "检查订阅内容变更失败", err)
+		return s.failUpdate(id, op, "检查订阅内容变更失败", err)
 	}
 	if unchanged {
 		now := time.Now()
@@ -153,45 +151,38 @@ func (s *SubscriptionService) UpdateNodes(ctx context.Context, id uint) (*ParseS
 		if op != nil {
 			_ = op.Success("订阅更新完成", map[string]any{"id": id, "name": sub.Name, "unchanged": true})
 		}
-		return &ParseStats{Unchanged: true}, nil
+		return nil
 	}
 
-	result, err := s.parseWithStats(string(body))
+	parsed, err := s.parseWithStats(string(body))
 	if err != nil {
-		return nil, s.failUpdate(id, op, "解析订阅失败", err)
+		return s.failUpdate(id, op, "解析订阅失败", err)
 	}
 	if op != nil {
-		_ = op.Update("订阅解析完成", map[string]any{"id": id, "name": sub.Name, "total": result.Total})
+		_ = op.Update("订阅解析完成", map[string]any{"id": id, "name": sub.Name, "total": parsed.Total})
 	}
 
-	newNodes, err := s.filterNewNodes(result.Nodes, id)
+	newNodes, err := s.filterNewNodes(parsed.Nodes, id)
 	if err != nil {
-		return nil, s.failUpdate(id, op, "读取现有节点失败", err)
+		return s.failUpdate(id, op, "读取现有节点失败", err)
 	}
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		if len(newNodes) > 0 {
-			if err := repository.NewNodeRepository(tx).SaveBatch(newNodes); err != nil {
-				return err
-			}
-		}
-		return repository.NewSubscriptionRepository(tx).UpdateContentHash(id, contentHash)
-	}); err != nil {
-		return nil, s.failUpdate(id, op, "写入节点失败", err)
+	if err := s.repo.SaveNodesAndContentHash(newNodes, id, contentHash); err != nil {
+		return s.failUpdate(id, op, "写入节点失败", err)
 	}
 
-	stats := &ParseStats{Total: result.Total, Success: result.Total, Duplicates: result.Total - len(newNodes), Added: len(newNodes)}
+	duplicates := parsed.Total - len(newNodes)
 	now := time.Now()
 	s.updateSyncStatus(id, "success", &now)
 	if op != nil {
 		_ = op.Success("订阅更新完成", map[string]any{
 			"id":         id,
 			"name":       sub.Name,
-			"total":      stats.Total,
-			"duplicates": stats.Duplicates,
-			"added":      stats.Added,
+			"total":      parsed.Total,
+			"duplicates": duplicates,
+			"added":      len(newNodes),
 		})
 	}
-	return stats, nil
+	return nil
 }
 
 func (s *SubscriptionService) fetchContent(ctx context.Context, url string, id uint) ([]byte, error) {
@@ -245,9 +236,6 @@ func (s *SubscriptionService) filterNewNodes(nodes []*model.Node, subscriptionID
 	var newNodes []*model.Node
 	batchKeys := make(map[string]struct{}, len(nodes))
 	for _, node := range nodes {
-		if node == nil {
-			continue
-		}
 		node.SubscriptionID = subscriptionID
 		key := node.IdentityKey()
 		if _, duplicated := batchKeys[key]; duplicated {
@@ -269,7 +257,7 @@ type parseResult struct {
 
 func (s *SubscriptionService) parseWithStats(content string) (*parseResult, error) {
 	urls := subscription.CleanContent(content)
-	parsedResult := s.parser.ParseNodesWithDedup(urls)
+	parsedResult := subscription.ParseNodesWithDedup(urls)
 	nodes := make([]*model.Node, 0, len(parsedResult.Nodes))
 	for _, n := range parsedResult.Nodes {
 		nodes = append(nodes, convertParsedNodeToModel(n))
@@ -278,8 +266,5 @@ func (s *SubscriptionService) parseWithStats(content string) (*parseResult, erro
 }
 
 func convertParsedNodeToModel(n *types.ParsedNode) *model.Node {
-	if n == nil {
-		return nil
-	}
-	return &model.Node{Name: n.Name, Protocol: n.Protocol, Address: n.Address, Port: n.Port, RawURL: n.RawURL, RawConfig: n.RawConfig, OutboundConfig: n.OutboundConfig}
+	return &model.Node{Name: n.Name, Protocol: n.Protocol, Address: n.Address, Port: n.Port, RawURL: n.RawURL, RawConfig: n.RawConfig, Transport: n.Transport}
 }

@@ -1,6 +1,6 @@
 import { reactive, ref } from 'vue'
 
-export type CardEditorKey = number | 'new' | null
+type CardEditorKey = number | 'new' | null
 
 export function useCardEditor<TForm extends object>(initialForm: TForm) {
   const expandedKey = ref<CardEditorKey>(null)

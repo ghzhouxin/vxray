@@ -1,8 +1,6 @@
 package api
 
 import (
-	"fmt"
-
 	"github.com/gin-gonic/gin"
 	"v2ray-server/internal/dto"
 	"v2ray-server/internal/service"
@@ -13,15 +11,6 @@ type XrayHandler struct{ services *service.Container }
 
 func NewXrayHandler(services *service.Container) *XrayHandler {
 	return &XrayHandler{services: services}
-}
-
-func (h *XrayHandler) restartIfRunning() error {
-	if h.services.Xray.Status() {
-		if err := h.services.Xray.Stop(); err != nil {
-			return fmt.Errorf("stop xray before restart: %w", err)
-		}
-	}
-	return h.services.Xray.Start()
 }
 
 func (h *XrayHandler) Runtime(c *gin.Context) {
@@ -73,8 +62,8 @@ func (h *XrayHandler) SaveConfig(c *gin.Context) {
 	if handleError(c, h.services.Xray.SaveConfig(req.Content)) {
 		return
 	}
-	if err := h.restartIfRunning(); err != nil {
-		response.Success(c, gin.H{"warning": "config saved, but start failed: " + err.Error()})
+	if err := h.services.Xray.Restart(); err != nil {
+		response.Success(c, gin.H{"warning": "config saved, but restart failed: " + err.Error()})
 		return
 	}
 	response.SuccessMessage(c, "config saved and xray started")

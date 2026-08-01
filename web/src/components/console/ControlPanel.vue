@@ -13,12 +13,22 @@
       </IconButton>
       <IconButton
         :tooltip="`系统代理：${proxyStore.systemProxyEnabled ? '开' : '关'}`"
-        :disabled="proxyStore.proxyLoading"
+        :disabled="proxyStore.loading"
         :tone="proxyStore.systemProxyEnabled ? 'success' : 'default'"
         :size="ICON_BUTTON_SIZE_LG"
         @click="$emit('toggle-proxy')"
       >
         <Link />
+      </IconButton>
+      <IconButton
+        :tooltip="`TUN 模式：${tunStore.isEnabled ? '开' : '关'}`"
+        :disabled="tunStore.loading || tunStore.isTransitioning"
+        :tone="tunStore.isEnabled ? 'success' : 'default'"
+        :working="tunStore.isTransitioning"
+        :size="ICON_BUTTON_SIZE_LG"
+        @click="$emit('toggle-tun')"
+      >
+        <Guide />
       </IconButton>
       <IconButton
         class="logs-btn"
@@ -35,7 +45,7 @@
       <div class="panel-title-row">
         <div class="title-left">
           <span>网站测速</span>
-          <span v-if="probing && probeMessage" class="probe-progress">{{ probeMessage }}</span>
+          <span v-if="batchLoading && batchProgress" class="batch-progress">{{ batchProgress }}</span>
         </div>
         <div class="title-actions">
           <IconButton
@@ -50,9 +60,9 @@
             tooltip="轮流测速 (Alt+R)"
             :size="ICON_BUTTON_SIZE_SM"
             tone="success"
-            :disabled="xrayStore.speedTesting || speedTestDisabled || probing"
-            :working="probing"
-            @click="$emit('website-probe')"
+            :disabled="xrayStore.websiteSpeedTestLoading || speedTestDisabled || batchLoading"
+            :working="batchLoading"
+            @click="$emit('batch-website-speed-test')"
           >
             <Compass />
           </IconButton>
@@ -60,8 +70,8 @@
             tooltip="网站测速"
             :size="ICON_BUTTON_SIZE_SM"
             tone="success"
-            :disabled="xrayStore.speedTesting || speedTestDisabled || probing"
-            :working="(xrayStore.speedTesting || speedTestDisabled) && !probing"
+            :disabled="xrayStore.websiteSpeedTestLoading || speedTestDisabled || batchLoading"
+            :working="xrayStore.websiteSpeedTestLoading && !batchLoading"
             @click="$emit('speed-test')"
           >
             <Aim />
@@ -71,7 +81,7 @@
       <div class="speed-grid">
         <div v-for="r in speedCells" :key="r.name" class="speed-cell">
           <AppIcon :src="r.icon" :name="r.name" :size="16" />
-          <strong :class="r.latencyClass">{{ formatLatency(r.latency, xrayStore.speedTesting) }}</strong>
+          <strong :class="r.latencyClass">{{ formatLatency(r.latency, xrayStore.websiteSpeedTestLoading) }}</strong>
         </div>
       </div>
     </section>
@@ -119,8 +129,8 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Aim, Compass, Connection, Document, InfoFilled, Link, Setting, Tickets, VideoPause, VideoPlay } from '@element-plus/icons-vue'
-import { useProxyStore, useSettingsStore, useXrayStore } from '@/stores'
+import { Aim, Compass, Connection, Document, Guide, InfoFilled, Link, Setting, Tickets, VideoPause, VideoPlay } from '@element-plus/icons-vue'
+import { useProxyStore, useSettingsStore, useTunStore, useXrayStore } from '@/stores'
 import { ICON_BUTTON_SIZE_LG, ICON_BUTTON_SIZE_SM } from '@/constants'
 import { getLatencyClass, formatLatency } from '@/utils/formatters'
 import AppIcon from '@/components/AppIcon.vue'
@@ -128,6 +138,7 @@ import IconButton from '@/components/IconButton.vue'
 
 const xrayStore = useXrayStore()
 const proxyStore = useProxyStore()
+const tunStore = useTunStore()
 const settingsStore = useSettingsStore()
 
 const speedCells = computed(() =>
@@ -140,16 +151,17 @@ const speedCells = computed(() =>
 defineProps<{
   logsVisible: boolean
   speedTestDisabled?: boolean
-  probing?: boolean
-  probeMessage?: string
+  batchLoading?: boolean
+  batchProgress?: string
 }>()
 
 defineEmits<{
   'toggle-power': []
   'toggle-proxy': []
+  'toggle-tun': []
   'toggle-logs': []
   'speed-test': []
-  'website-probe': []
+  'batch-website-speed-test': []
   'open-speedtest-targets': []
   'open-subscriptions': []
   'open-xray-config': []
@@ -203,7 +215,7 @@ defineEmits<{
   gap: var(--spacing-xs);
 }
 
-.probe-progress {
+.batch-progress {
   font-size: var(--font-xs);
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;

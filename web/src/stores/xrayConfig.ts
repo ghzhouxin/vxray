@@ -7,7 +7,7 @@ export const useXrayConfigStore = defineStore('xrayConfig', () => {
   const xrayConfigText = ref('')
   const originalXrayConfigText = ref('')
   const defaultXrayConfigText = ref('')
-  const saving = ref(false)
+  const loading = ref(false)
 
   async function fetchXrayConfig() {
     const [content, defaultContent] = await Promise.all([xrayApi.getConfig(), xrayApi.getDefaultConfig()])
@@ -17,7 +17,7 @@ export const useXrayConfigStore = defineStore('xrayConfig', () => {
   }
 
   async function saveXrayConfig() {
-    await withLoading(saving, async () => {
+    await withLoading(loading, async () => {
       await xrayApi.saveConfig(xrayConfigText.value)
       originalXrayConfigText.value = xrayConfigText.value
     })
@@ -28,7 +28,7 @@ export const useXrayConfigStore = defineStore('xrayConfig', () => {
 
   return {
     xrayConfigText, originalXrayConfigText,
-    saving,
+    loading,
     fetchXrayConfig, saveXrayConfig, resetXrayConfig, restoreDefaultXrayConfig
   }
 })

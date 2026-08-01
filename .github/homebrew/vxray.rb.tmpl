@@ -22,7 +22,7 @@ class Vxray < Formula
     environment_variables(
       VXRAY_HOME: "#{Dir.home}/.vxray",
       VXRAY_WEB_ROOT: "#{opt_prefix}/share/vxray/web",
-      VXRAY_XRAY_BINARY: "#{Formula["xray"].opt_bin}/xray"
+      PATH: "#{Dir.home}/.local/bin:/opt/homebrew/bin:/usr/bin:/bin",
     )
     keep_alive true
     working_dir Dir.home

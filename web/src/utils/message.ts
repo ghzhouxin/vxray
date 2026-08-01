@@ -1,14 +1,24 @@
 import { AxiosError } from 'axios'
 import { MESSAGE_DURATION } from '@/constants'
 import { ElMessage } from 'element-plus'
-import { setPendingError } from './focusGuard'
+
+let pendingError = ''
 
 function showMessage(type: 'success' | 'error' | 'warning', message: string, duration: number) {
   if (document.hidden) {
-    if (type === 'error') setPendingError(message)
+    if (type === 'error') pendingError = message
     return
   }
   ElMessage[type]({ message, duration })
+}
+
+// flushPendingError 在页面恢复可见时弹出隐藏期间累积的错误消息。
+// 由 focusGuard 的 visibilitychange 监听器调用。
+export function flushPendingError() {
+  if (!document.hidden && pendingError) {
+    ElMessage.error({ message: pendingError, duration: MESSAGE_DURATION })
+    pendingError = ''
+  }
 }
 
 export const msg = {

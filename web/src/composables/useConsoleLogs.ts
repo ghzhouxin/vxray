@@ -49,9 +49,9 @@ export function useConsoleLogs(getSafeEls?: () => HTMLElement[]) {
 
   function applySnapshot(snapshot: ConsoleSnapshot) {
     logs.value = snapshot.logs.items
-    tags.value = snapshot.logs.tags || []
-    levels.value = snapshot.logs.levels || []
-    nextCursor.value = snapshot.logs.next_cursor || ''
+    tags.value = snapshot.logs.tags
+    levels.value = snapshot.logs.levels
+    nextCursor.value = snapshot.logs.next_cursor
     hasMore.value = snapshot.logs.has_more
   }
 

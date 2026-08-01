@@ -41,11 +41,27 @@ func isBase64Rune(r rune) bool {
 }
 
 type vmessJSONConfig struct {
-	Ps, Add, ID, Scy, Net, Type, Host, Path, Sni, Fp, Security, Vcn, Pcs string
-	ServiceName, Authority, Mode, Extra                                  string
-	Port                                                                 any
-	Alpn                                                                 any // string 或 []any
-	TLS                                                                  any // string "tls" 或 bool
+	Ps          string `json:"ps,omitempty"`
+	Add         string `json:"add,omitempty"`
+	ID          string `json:"id,omitempty"`
+	Scy         string `json:"scy,omitempty"`
+	Net         string `json:"net,omitempty"`
+	Type        string `json:"type,omitempty"`
+	Host        string `json:"host,omitempty"`
+	Path        string `json:"path,omitempty"`
+	Sni         string `json:"sni,omitempty"`
+	Fp          string `json:"fp,omitempty"`
+	Security    string `json:"security,omitempty"`
+	ServiceName string `json:"servicename,omitempty"`
+	Authority   string `json:"authority,omitempty"`
+	Mode        string `json:"mode,omitempty"`
+	Extra       string `json:"extra,omitempty"`
+	Port        any    `json:"port,omitempty"`
+	Alpn        any    `json:"alpn,omitempty"` // string 或 []any
+	TLS         any    `json:"tls,omitempty"`  // string "tls" 或 bool
+	ECH         string `json:"ech,omitempty"`
+	VCN         string `json:"vcn,omitempty"`
+	PCS         string `json:"pcs,omitempty"`
 }
 
 func parseVMessJSON(encoded string) (*types.ParsedNode, error) {
@@ -72,74 +88,54 @@ func parseVMessJSON(encoded string) (*types.ParsedNode, error) {
 		config.Add,
 		port,
 		types.Map{"uuid": config.ID, "security": security},
-		buildVNextOutbound(
-			types.ProtocolVMess,
-			config.Add,
-			port,
-			[]types.Map{{"id": config.ID, "security": security}},
-			buildVMessStreamSettings(config),
-		),
+		buildVMessTransport(config),
 	), nil
 }
 
-func buildVMessStreamSettings(config vmessJSONConfig) types.Map {
-	streamSettings := types.Map{}
-	network := normalizeNetwork(config.Net)
-	if network != "" {
-		streamSettings["network"] = network
-	}
+// buildVMessTransport 从 vmess JSON 构造 Transport。
+func buildVMessTransport(config vmessJSONConfig) types.Transport {
+	transport := types.Transport{Network: normalizeNetwork(config.Net)}
+
 	if isVMessTLSEnabled(config.TLS) {
-		streamSettings["security"] = SecurityTLS
-		streamSettings["tlsSettings"] = buildVMessTLSSettings(config)
-	}
-	path := config.Path
-	if path == "" && (network == NetworkWS || network == NetworkXHTTP || network == NetworkHTTPUpgrade) {
-		path = "/"
-	}
-	headerType := normalizeHeaderType(config.Type)
-	applyNetworkSettingsFromValues(&streamSettings, network, func(key string) string {
-		switch key {
-		case "path":
-			return path
-		case "serviceName":
-			return firstNonEmpty(config.ServiceName, config.Path) // 兼容旧版 v2rayN 用 Path 表示 serviceName
-		case "authority":
-			return config.Authority
-		case "mode":
-			return config.Mode
-		case "extra":
-			return config.Extra
-		case "host":
-			return config.Host
-		case "headerType":
-			return headerType
+		transport.Security = types.SecurityTLS
+		sni := firstNonEmpty(config.Sni, config.Host, config.Add)
+		transport.TLS = &types.TLSConfig{
+			ServerName:           sni,
+			Fingerprint:          config.Fp,
+			ALPN:                 normalizeALPN(config.Alpn),
+			ECHConfigList:        config.ECH,
+			VerifyPeerCertByName: config.VCN,
+			PinnedPeerCertSha256: config.PCS,
 		}
-		return ""
-	})
-	return streamSettings
+	}
+
+	headerType := normalizeHeaderType(config.Type)
+
+	switch transport.Network {
+	case types.NetworkWS:
+		transport.WebSocket = buildWebSocket(config.Path, config.Host)
+	case types.NetworkGRPC:
+		serviceName := firstNonEmpty(config.ServiceName, config.Path) // 兼容旧版 v2rayN 用 Path 表示 serviceName
+		transport.GRPC = buildGRPC(serviceName, config.Authority, config.Mode == "multi")
+	case types.NetworkXHTTP:
+		transport.XHTTP = buildXHTTP(config.Path, config.Host, config.Mode, config.Extra, "", "")
+	case types.NetworkHTTPUpgrade:
+		transport.WebSocket = buildWebSocket(config.Path, config.Host)
+	case types.NetworkTCP:
+		transport.TCP = buildTCP(headerType, config.Path, config.Host)
+	}
+	return transport
 }
 
 // isVMessTLSEnabled 处理 VMess JSON tls 字段（string "tls" 或 bool）
 func isVMessTLSEnabled(tls any) bool {
 	switch v := tls.(type) {
 	case string:
-		return v == SecurityTLS
+		return v == types.SecurityTLS
 	case bool:
 		return v
 	}
 	return false
-}
-
-// buildVMessTLSSettings 补充 vcn/pcs（xray-core v26 拒绝 allowInsecure）
-func buildVMessTLSSettings(config vmessJSONConfig) types.Map {
-	tlsSettings := buildTLSSettings(resolveVMessSNI(config), config.Fp, config.Alpn)
-	applyTLSCertVerification(tlsSettings, config.Vcn, config.Pcs)
-	return tlsSettings
-}
-
-// resolveVMessSNI: sni → host → add（无 peer 概念）
-func resolveVMessSNI(config vmessJSONConfig) string {
-	return firstNonEmpty(config.Sni, config.Host, config.Add)
 }
 
 // normalizeHeaderType 仅保留 "http"，其他值（"---"/"none"/""）转为 ""
@@ -168,12 +164,10 @@ func parseVMessAEAD(encoded string) (*types.ParsedNode, error) {
 		return nil, fmt.Errorf("vmess: empty host")
 	}
 	port := normalizePort(portFromAny(u.Port()))
-	name := defaultString(u.Fragment, host)
+	name := firstNonEmpty(u.Fragment, host)
 	query := u.Query()
 	// AEAD: encryption 是 cipher，security 是 stream security（TLS/Reality），区别于 JSON 的 scy/security
-	cipher := defaultString(query.Get("encryption"), DefaultSecurity)
-
-	streamSettings := buildStreamSettingsFromQuery(query)
+	cipher := firstNonEmpty(query.Get("encryption"), DefaultSecurity)
 
 	return newParsedNode(
 		name,
@@ -181,12 +175,6 @@ func parseVMessAEAD(encoded string) (*types.ParsedNode, error) {
 		host,
 		port,
 		types.Map{"uuid": uuid, "security": cipher},
-		buildVNextOutbound(
-			types.ProtocolVMess,
-			host,
-			port,
-			[]types.Map{{"id": uuid, "security": cipher}},
-			streamSettings,
-		),
+		buildTransport(query),
 	), nil
 }

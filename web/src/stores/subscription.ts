@@ -1,13 +1,13 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { subscriptionApi } from '@/api'
-import type { Subscription, SubscriptionBatchUpdateResult, SubscriptionFormData } from '@/types'
+import type { ConsoleSnapshot, Subscription, SubscriptionBatchUpdateResult, SubscriptionFormData } from '@/types'
 
 export const useSubscriptionStore = defineStore('subscription', () => {
   const subscriptions = ref<Subscription[]>([])
 
-  function setSubscriptions(next: Subscription[]) {
-    subscriptions.value = next || []
+  function applyConsoleSnapshot(snapshot: ConsoleSnapshot) {
+    subscriptions.value = snapshot.subscriptions
   }
 
   async function addSubscription(data: SubscriptionFormData) {
@@ -32,5 +32,5 @@ export const useSubscriptionStore = defineStore('subscription', () => {
     return subscriptionApi.refreshSubscriptions(ids?.length ? { ids } : undefined)
   }
 
-  return { subscriptions, setSubscriptions, addSubscription, updateSubscription, deleteSubscription, refreshSubscriptions }
+  return { subscriptions, applyConsoleSnapshot, addSubscription, updateSubscription, deleteSubscription, refreshSubscriptions }
 })

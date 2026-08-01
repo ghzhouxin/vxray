@@ -39,13 +39,14 @@
         ref="controlPanelRef"
         :logs-visible="!logsCollapsed"
         :speed-test-disabled="autoSpeedTestPending"
-        :probing="websiteProbing"
-        :probe-message="websiteProbeMessage"
+        :batch-loading="batchWebsiteSpeedTestLoading"
+        :batch-progress="batchWebsiteSpeedTestProgress"
         @toggle-power="handlePowerToggle"
         @toggle-proxy="handleProxyToggle"
+        @toggle-tun="handleTunToggle"
         @toggle-logs="toggleLogs"
         @speed-test="handleSpeedTest"
-        @website-probe="handleWebsiteProbe"
+        @batch-website-speed-test="handleBatchWebsiteSpeedTest"
         @open-speedtest-targets="openModal('speedTestTargets')"
         @open-subscriptions="openModal('subscriptions')"
         @open-xray-config="openXrayConfigModal"
@@ -56,7 +57,7 @@
       <div class="work-pane">
         <NodeToolbar
           ref="nodeToolbarRef"
-          :subscription-updating="updatingAllSubscriptions"
+          :subscription-updating="batchUpdating"
           :delete-loading="deletingFailedNodes"
           @update-all-subscriptions="handleUpdateAllSubscriptions"
           @speed-test-retest="handleRetestTimeout"
@@ -88,7 +89,7 @@
       :logs="logs"
       :tags="logTags"
       :levels="logLevels"
-      :loading="logsLoading"
+      :loading="logLoading"
       :has-more="logHasMore"
       @clear="clearLogs"
       @load-more="loadMoreLogs"
@@ -97,8 +98,8 @@
     <SubscriptionManagerDialog
       v-model="subscriptionsVisible"
       :updating-id="updatingSubscriptionId"
-      :updating-all="updatingAllSubscriptions"
-      :submitting="submittingSubscription"
+      :updating-all="batchUpdating"
+      :submitting="submitLoading"
       @submit="handleSubmitSubscription"
       @update-subscription="handleUpdateSubscription"
       @update-all="handleUpdateAllSubscriptions"
@@ -147,7 +148,7 @@ import SubscriptionManagerDialog from '@/components/console/SubscriptionManagerD
 import SystemSettingsDialog from '@/components/console/SystemSettingsDialog.vue'
 import XrayConfigDialog from '@/components/console/XrayConfigDialog.vue'
 import { useNodeStore, useOperationStore, useSettingsStore, useXrayStore } from '@/stores'
-import { useAutoRefresh, useConsoleHandlers, useConsoleLogs, useConsoleRefresh, useModalState, useNodeActions, useSpeedTest, useSubscriptionManager, useWebsiteProbe } from '@/composables'
+import { useAutoRefresh, useConsoleHandlers, useConsoleLogs, useConsoleRefresh, useModalState, useNodeActions, useSpeedTest, useSubscriptionManager, useBatchWebsiteSpeedTest } from '@/composables'
 import { STATUS_REFRESH_INTERVAL } from '@/constants'
 import { handleError } from '@/utils/message'
 import type { Node } from '@/types'
@@ -168,7 +169,7 @@ const {
   logs,
   tags: logTags,
   levels: logLevels,
-  loading: logsLoading,
+  loading: logLoading,
   hasMore: logHasMore,
   filter: logFilter,
   applySnapshot: applyLogsSnapshot,
@@ -199,10 +200,10 @@ const {
   restoreSpeedTestStatus, cleanup: cleanupSpeedTest
 } = useSpeedTest(refreshContext)
 
-const { probing: websiteProbing, probeMessage: websiteProbeMessage, runProbe: handleWebsiteProbe } = useWebsiteProbe(refreshContext)
+const { batchLoading: batchWebsiteSpeedTestLoading, batchProgress: batchWebsiteSpeedTestProgress, runBatch: handleBatchWebsiteSpeedTest } = useBatchWebsiteSpeedTest(refreshContext)
 
 const {
-  updatingSubscriptionId, updatingAllSubscriptions, submittingSubscription,
+  updatingSubscriptionId, batchUpdating, submitLoading,
   handleSubmitSubscription,
   handleUpdateSubscription, handleUpdateAllSubscriptions,
   handleDeleteSubscription
@@ -221,7 +222,7 @@ const {
 const selectedNode = ref<Node | null>(null)
 
 const {
-  handlePowerToggle, handleSpeedTest, handleProxyToggle,
+  handlePowerToggle, handleSpeedTest, handleProxyToggle, handleTunToggle,
   openSettingsModal, openRuntimeModal, openXrayConfigModal,
   handleSaveUserSettings, handleSaveXrayConfig, handleXrayConfigSaved
 } = useConsoleHandlers({ refreshContext, refreshConsole, openModal })
@@ -244,10 +245,10 @@ const onKey = (fn: () => void, disabled?: () => boolean) => (e: KeyboardEvent) =
 
 onKeyStroke(matchKey('KeyG'), onKey(toggleLogs))
 onKeyStroke(matchKey('KeyT'), onKey(handleRetestTimeout, () => operationStore.running))
-onKeyStroke(matchKey('KeyR'), onKey(handleWebsiteProbe, () => xrayStore.speedTesting || autoSpeedTestPending.value || websiteProbing.value))
+onKeyStroke(matchKey('KeyR'), onKey(handleBatchWebsiteSpeedTest, () => xrayStore.websiteSpeedTestLoading || autoSpeedTestPending.value || batchWebsiteSpeedTestLoading.value))
 onKeyStroke(matchKey('KeyV'), onKey(handleSpeedTestAvailable, () => operationStore.running))
 onKeyStroke(matchKey('KeyD'), onKey(handleDeleteFailed, () => deletingFailedNodes.value || operationStore.running))
-onKeyStroke(matchKey('KeyS'), onKey(handleUpdateAllSubscriptions, () => updatingAllSubscriptions.value || operationStore.running))
+onKeyStroke(matchKey('KeyS'), onKey(handleUpdateAllSubscriptions, () => batchUpdating.value || operationStore.running))
 
 async function loadPageData() {
   await refreshConsole()
