@@ -8,7 +8,6 @@ OUTPUT_DIR="$ROOT_DIR/output"
 DEBUG_BINARY="$OUTPUT_DIR/vxray-dev"
 DEV_HOME="$HOME/.vxray-dev"
 LOG_DIR="$DEV_HOME/logs"
-FORMULA="ghzhouxin/vxray/vxray"
 DEBUG_PORT="10888"
 
 PID_FILE="$DEV_HOME/vxray-dev.pid"
@@ -19,12 +18,14 @@ usage() {
 Usage: ./scripts/dev.sh <command>
 
 Commands:
-  build     Build backend and frontend
-  start     Build and start debug process in background
-  stop      Stop the debug process
-  status    Show debug process status
-  check     Check debug endpoints
-  logs      Tail debug logs
+  build        Build backend and frontend
+  start        Build and start debug process in background
+  stop         Stop the debug process
+  restart      Rebuild and restart
+  status       Show debug process status
+  check        Check debug endpoints
+  logs         Tail debug logs
+  sudo-setup   Configure passwordless sudo for xray (one-time, for TUN mode)
 EOF
 }
 
@@ -56,10 +57,15 @@ stop_debug() {
     if kill -0 "$pid" 2>/dev/null && ps -p "$pid" -o comm= 2>/dev/null | grep -q "vxray"; then
       echo "Stopping vxray-dev (PID: $pid)..."
       kill "$pid"
+      # Wait for graceful shutdown (also kills child xray processes)
+      for i in $(seq 1 10); do
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.5
+      done
     fi
     rm -f "$PID_FILE"
   else
-    pid=$(lsof -i :$DEBUG_PORT -P 2>/dev/null | grep LISTEN | awk '{print $2}' | head -1)
+    pid=$(lsof -i :"$DEBUG_PORT" -P 2>/dev/null | grep LISTEN | awk '{print $2}' | head -1)
     if [ -n "$pid" ]; then
       echo "Stopping process on port $DEBUG_PORT (PID: $pid)..."
       kill "$pid" 2>/dev/null || true
@@ -71,10 +77,10 @@ stop_debug() {
 
 show_status() {
   if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
-    echo "Status: Running (PID: $(cat "$PID_FILE"))"
+    echo "vxray-dev: Running (PID: $(cat "$PID_FILE"))"
     echo "Log path: $LOG_FILE"
   else
-    echo "Status: Stopped"
+    echo "vxray-dev: Stopped"
   fi
 }
 
@@ -88,15 +94,38 @@ show_logs() {
   tail -f "$LOG_FILE"
 }
 
+setup_sudo() {
+  XRAY_PATH=$(which xray 2>/dev/null || true)
+  if [ -z "$XRAY_PATH" ]; then
+    echo "Error: xray not found in PATH"
+    exit 1
+  fi
+  SUDOERS_LINE="$(whoami) ALL=(root) NOPASSWD: $XRAY_PATH, /bin/kill"
+  SUDOERS_FILE="/etc/sudoers.d/vxray-dev"
+
+  echo "This will create $SUDOERS_FILE with:"
+  echo "  $SUDOERS_LINE"
+  echo ""
+  echo "(/bin/kill 用于 root xray 强杀兜底)"
+  echo "You will be prompted for your password once."
+
+  sudo tee "$SUDOERS_FILE" > /dev/null <<< "$SUDOERS_LINE"
+  sudo chmod 0440 "$SUDOERS_FILE"
+  echo "Done. sudo -n xray should now work without password."
+  sudo -n "$XRAY_PATH" version
+}
+
 main() {
   case "${1:-}" in
-    build)   build_all ;;
-    start)   start_debug ;;
-    stop)    stop_debug ;;
-    status)  show_status ;;
-    check)   check ;;
-    logs)    show_logs ;;
-    *)       usage; exit 1 ;;
+    build)       build_all ;;
+    start)       start_debug ;;
+    stop)        stop_debug ;;
+    restart)     stop_debug >/dev/null 2>&1 || true; start_debug ;;
+    status)      show_status ;;
+    check)       check ;;
+    logs)        show_logs ;;
+    sudo-setup)  setup_sudo ;;
+    *)           usage; exit 1 ;;
   esac
 }
 

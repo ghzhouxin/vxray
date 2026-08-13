@@ -29,7 +29,7 @@ type GeoSettings struct {
 
 const (
 	defaultTimeout     = 2000 * time.Millisecond
-	defaultConcurrency = 64
+	defaultConcurrency = 32
 )
 
 func DefaultUserSettings() UserSettings {

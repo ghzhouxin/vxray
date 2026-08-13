@@ -1,12 +1,13 @@
 import { ref } from 'vue'
-import { useSubscriptionStore } from '@/stores'
+import { useOperationStore, useSubscriptionStore } from '@/stores'
 import { msg } from '@/utils/message'
 import { useActionExecutor } from './useActionExecutor'
 import type { Subscription, SubscriptionFormData, RefreshContext } from '@/types'
 
 export function useSubscriptionManager(ctx: RefreshContext) {
   const subscriptionStore = useSubscriptionStore()
-  const { execute } = useActionExecutor(ctx)
+  const operationStore = useOperationStore()
+  const { execute } = useActionExecutor()
   const { refreshConsoleAndNodes } = ctx
 
   const updatingSubscriptionId = ref(0)
@@ -32,23 +33,29 @@ export function useSubscriptionManager(ctx: RefreshContext) {
     if (!ids?.length && !subscriptionStore.subscriptions.length) { msg.warning('暂无订阅'); return }
     batchUpdating.value = !ids?.length
     updatingSubscriptionId.value = ids?.[0] || 0
-    await execute(
-      async () => {
-        const result = await subscriptionStore.refreshSubscriptions(ids)
-        const isSingle = ids?.length === 1
-        const isBatch = !ids?.length
-        if (result.failed > 0) {
-          if (isSingle) msg.error('订阅更新失败')
-          else if (isBatch) msg.error(`全部订阅更新完成：成功 ${result.success}，失败 ${result.failed}`)
-          else msg.error(`订阅更新完成：成功 ${result.success}，失败 ${result.failed}`)
-        } else {
-          msg.success(isSingle ? '订阅更新成功' : isBatch ? '全部订阅更新完成' : '订阅更新完成')
-        }
-      },
-      { refreshAfterAction: refreshConsoleAndNodes, showLogsBefore: true, errorMsg: ids?.length ? '更新订阅失败' : '更新全部订阅失败' }
-    )
-    updatingSubscriptionId.value = 0
-    batchUpdating.value = false
+    operationStore.start('subscription_update', ids?.length ? '更新订阅' : '批量更新订阅')
+
+    try {
+      await subscriptionStore.refreshSubscriptions(ids, progress => operationStore.applyProgress(progress))
+      const isSingle = ids?.length === 1
+      const isBatch = !ids?.length
+      const last = operationStore.active
+      if (last?.failed && last.failed > 0) {
+        if (isSingle) msg.error('订阅更新失败')
+        else if (isBatch) msg.error(`全部订阅更新完成：成功 ${last.success}，失败 ${last.failed}`)
+        else msg.error(`订阅更新完成：成功 ${last.success}，失败 ${last.failed}`)
+      } else {
+        msg.success(isSingle ? '订阅更新成功' : isBatch ? '全部订阅更新完成' : '订阅更新完成')
+      }
+    } catch (error) {
+      msg.error(ids?.length ? '更新订阅失败' : '更新全部订阅失败')
+      throw error
+    } finally {
+      updatingSubscriptionId.value = 0
+      batchUpdating.value = false
+      operationStore.clear()
+      await refreshConsoleAndNodes().catch(() => undefined)
+    }
   }
 
   function handleUpdateSubscription(id: number) { return runSubscriptionUpdate([id]) }

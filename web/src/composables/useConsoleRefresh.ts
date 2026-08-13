@@ -5,7 +5,6 @@ import type { ConsoleSnapshot } from '@/types'
 
 export function useConsoleRefresh(options: {
   applyLogsSnapshot: (snapshot: ConsoleSnapshot) => void
-  loadLogs: (reset?: boolean) => Promise<void>
 }) {
   const xrayStore = useXrayStore()
   const nodeStore = useNodeStore()
@@ -33,14 +32,12 @@ export function useConsoleRefresh(options: {
   async function refreshConsole() { applySnapshot(await consoleApi.get()) }
   async function refreshNodes() { await nodeStore.fetchNodes() }
   async function refreshConsoleAndNodes() { await Promise.all([refreshConsole(), refreshNodes()]) }
-  async function refreshLogsSilently() { await options.loadLogs(true).catch(e => console.warn(e)) }
 
   return {
     nodeSummary,
     runtimePorts,
     refreshConsole,
     refreshNodes,
-    refreshConsoleAndNodes,
-    refreshLogsSilently
+    refreshConsoleAndNodes
   }
 }

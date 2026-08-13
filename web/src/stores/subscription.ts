@@ -28,8 +28,12 @@ export const useSubscriptionStore = defineStore('subscription', () => {
     subscriptions.value = subscriptions.value.filter(s => s.id !== id)
   }
 
-  async function refreshSubscriptions(ids?: number[]): Promise<SubscriptionBatchUpdateResult> {
-    return subscriptionApi.refreshSubscriptions(ids?.length ? { ids } : undefined)
+  async function refreshSubscriptions(ids?: number[], onProgress?: (progress: any) => void): Promise<SubscriptionBatchUpdateResult | void> {
+    if (onProgress) {
+      await subscriptionApi.refreshSubscriptions(ids?.length ? { ids } : undefined, onProgress)
+      return
+    }
+    return subscriptionApi.refreshSubscriptions(ids?.length ? { ids } : undefined) as Promise<SubscriptionBatchUpdateResult>
   }
 
   return { subscriptions, applyConsoleSnapshot, addSubscription, updateSubscription, deleteSubscription, refreshSubscriptions }

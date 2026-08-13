@@ -2,16 +2,16 @@ import { computed, ref } from 'vue'
 import { useNodeStore, useSettingsStore, useXrayStore } from '@/stores'
 import { handleError, msg } from '@/utils/message'
 import { waitForProxyReady } from '@/utils/async'
-import { NO_AVAILABLE_NODE, BATCH_EARLY_STOP_RATIO } from '@/constants'
+import { NO_AVAILABLE_NODE } from '@/constants'
 import type { RefreshContext } from '@/types'
 
 // useBatchWebsiteSpeedTest 实现前端轮流网站测速：按延迟升序遍历可用节点，逐个切换并触发网站测速，
-// ok 比率达到 BATCH_EARLY_STOP_RATIO 即早退。整个过程在前端循环，无后端 job。
+// 网站通过数达到 floor(total*3/4)（至少1）即停止；未找到则恢复测速前节点。整个过程在前端循环，无后端 job。
 export function useBatchWebsiteSpeedTest(ctx: RefreshContext) {
   const nodeStore = useNodeStore()
   const xrayStore = useXrayStore()
   const settingsStore = useSettingsStore()
-  const { refreshConsoleAndNodes, refreshLogsSilently, showLogs } = ctx
+  const { refreshConsoleAndNodes } = ctx
 
   const batchLoading = ref(false)
   const batchCurrent = ref(0)
@@ -34,13 +34,15 @@ export function useBatchWebsiteSpeedTest(ctx: RefreshContext) {
       .sort((a, b) => (a.latency ?? 0) - (b.latency ?? 0))
     if (!candidates.length) { msg.warning(NO_AVAILABLE_NODE); return }
 
-    showLogs()
+    const total = settingsStore.settings.speedtest.website_targets.length
+    const threshold = Math.max(1, Math.floor(total * 3 / 4))
+    const originalNodeId = xrayStore.currentNode?.id
+
     batchLoading.value = true
     batchTotal.value = candidates.length
     batchCurrent.value = 0
 
-    let bestOk = 0
-    const total = settingsStore.settings.speedtest.website_targets.length
+    let foundOk = 0
     try {
       for (let i = 0; i < candidates.length; i++) {
         batchCurrent.value = i + 1
@@ -50,17 +52,26 @@ export function useBatchWebsiteSpeedTest(ctx: RefreshContext) {
           await xrayStore.runWebsiteSpeedTest()
           await settingsStore.fetchConfigView()
           const ok = countOk()
-          if (ok > bestOk) bestOk = ok
-          await refreshConsoleAndNodes().catch(e => console.warn(e))
-          await refreshLogsSilently()
-          if (total > 0 && ok >= total * BATCH_EARLY_STOP_RATIO) break
+          if (ok >= threshold) {
+            foundOk = ok
+            await refreshConsoleAndNodes().catch(e => console.warn(e))
+            break
+          }
+          // 未达标，快速跳过，不刷新直接试下一节点
         } catch (e) {
           console.warn('batch website speed test node failed', candidates[i].id, e)
         }
       }
-      if (bestOk === 0) msg.warning(`探测完毕，无可用节点（0/${total}）`)
-      else if (bestOk >= total) msg.success(`探测完成（${bestOk}/${total} 网站可用）`)
-      else msg.warning(`探测完毕（${bestOk}/${total} 网站可用）`)
+      if (foundOk > 0) {
+        msg.success(`找到优秀节点（${foundOk}/${total} 网站可用）`)
+      } else {
+        // 未找到优秀节点，恢复测速前的节点
+        if (originalNodeId) {
+          await nodeStore.activateNode(originalNodeId).catch(e => console.warn(e))
+          await refreshConsoleAndNodes().catch(e => console.warn(e))
+        }
+        msg.warning(`未找到优秀节点（阈值 ${threshold}/${total}）`)
+      }
     } catch (e) {
       handleError(e, '网站探测失败')
     } finally {

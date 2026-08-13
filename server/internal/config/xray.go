@@ -170,10 +170,11 @@ func (s *State) ActiveNodeID() uint {
 	return s.activeNodeID
 }
 
-func (s *State) SetActiveNodeID(id uint) {
+func (s *State) SetActiveNodeID(id uint) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.activeNodeID = id
+	return s.store.Set("active_node_id", id)
 }
 
 func (s *State) GeoUpdateURL() (geoIP, geoSite string, ok bool) {

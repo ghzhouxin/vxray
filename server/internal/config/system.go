@@ -20,6 +20,8 @@ type PathsMeta struct {
 	Database       string `json:"database"`
 	GeoDir         string `json:"geo_dir"`
 	XrayConfigPath string `json:"xray_config_path"`
+	XrayLogPath    string `json:"xray_log_path"`
+	XrayPidPath    string `json:"xray_pid_path"`
 	GeoIP          string `json:"geoip"`
 	GeoSite        string `json:"geosite"`
 	TunConfigPath  string `json:"tun_config_path"`
@@ -68,6 +70,8 @@ func buildSystemMeta(home string) SystemMeta {
 			Database:       filepath.Join(home, "data/vxray.db"),
 			GeoDir:         filepath.Join(home, "geo"),
 			XrayConfigPath: filepath.Join(home, "xray/config.json"),
+			XrayLogPath:    filepath.Join(home, "xray/xray.log"),
+			XrayPidPath:    filepath.Join(home, "xray/xray.pid"),
 			GeoIP:          filepath.Join(home, "geo/geoip.dat"),
 			GeoSite:        filepath.Join(home, "geo/geosite.dat"),
 			TunConfigPath:  filepath.Join(home, "xray/tun-config.json"),
@@ -75,8 +79,10 @@ func buildSystemMeta(home string) SystemMeta {
 			TunPidPath:     filepath.Join(home, "xray/tun.pid"),
 		},
 		Server: ServerMeta{Host: "127.0.0.1", Port: 11888},
-		Xray:   XrayMeta{Binary: "xray"},
-		Web:    WebMeta{Root: ""},
+		Xray: XrayMeta{
+			Binary: "xray",
+		},
+		Web: WebMeta{Root: ""},
 		Assets: AssetsMeta{
 			GeoSources: map[string]GeoSource{
 				"loyalsoldier": {

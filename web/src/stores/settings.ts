@@ -46,7 +46,16 @@ export const useSettingsStore = defineStore('settings', () => {
     })
   }
 
-  function restoreDefaultUserSettings() { settings.value = structuredClone(defaultSettings.value) }
+  // resetAndSaveUserSettings 从后端拿最新默认值，直接保存到后端并刷新前端 state。
+  // 一步到位，不依赖前端缓存的 defaultSettings，不需要用户手动点保存。
+  async function resetAndSaveUserSettings() {
+    await withLoading(settingsSaving, async () => {
+      const defaults = await settingsApi.getDefault()
+      await settingsApi.update(defaults)
+      Object.assign(settings.value, defaults)
+      Object.assign(defaultSettings.value, defaults)
+    })
+  }
 
   function updateWebsiteTargets(targets: SpeedTestTarget[]) {
     settings.value.speedtest.website_targets = targets
@@ -55,6 +64,6 @@ export const useSettingsStore = defineStore('settings', () => {
   return {
     settings, systemMeta,
     loading, settingsSaving,
-    fetchConfigView, saveUserSettings, restoreDefaultUserSettings, updateWebsiteTargets
+    fetchConfigView, saveUserSettings, resetAndSaveUserSettings, updateWebsiteTargets
   }
 })

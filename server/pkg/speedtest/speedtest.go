@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -67,10 +66,8 @@ func (st *SpeedTest) TestOutbound(outbound types.Map, nodeID uint) (result *Resu
 	var instance *core.Instance
 	defer func() {
 		if instance != nil {
-			func() {
-				defer func() { _ = recover() }()
-				instance.Close()
-			}()
+			defer func() { _ = recover() }()
+			instance.Close()
 		}
 	}()
 	defer func() {
@@ -140,45 +137,9 @@ func (st *SpeedTest) TestNodes(nodes []Node, progressChan chan<- Progress) {
 	}
 }
 
-// dialTCPWithRetry 对目标地址做最多两次 TCP 拨号，返回成功的连接（调用者负责关闭）。
-// 第一次超时 800ms；若为超时类失败则重试一次（超时 500ms）。
-// 快速失败（connection refused 等）不重试，因为端口明确关闭。
-func dialTCPWithRetry(target string) (net.Conn, error) {
-	conn, err := net.DialTimeout("tcp", target, 800*time.Millisecond)
-	if err == nil {
-		return conn, nil
-	}
-	if !isTimeoutError(err) {
-		return nil, err
-	}
-	return net.DialTimeout("tcp", target, 500*time.Millisecond)
-}
-
-// isTimeoutError 判断是否为超时类错误（值得重试）。
-func isTimeoutError(err error) bool {
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
-		return true
-	}
-	return errors.Is(err, context.DeadlineExceeded)
-}
-
-// checkTLS 对已建立的 TCP 连接做 TLS 握手检测，返回握手错误。
-// 函数返回时 conn（含底层 TCP）保证已关闭，含 panic 路径。
-func checkTLS(conn net.Conn, sni string, timeout time.Duration) error {
-	tlsConn := tls.Client(conn, &tls.Config{
-		ServerName:         sni,
-		InsecureSkipVerify: true,
-	})
-	defer tlsConn.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	return tlsConn.HandshakeContext(ctx)
-}
-
-// tcpPrescreen 对节点做 TCP+TLS 连通性预筛，通过预筛的节点发送到 passedChan。
-// 不可达节点直接标记失败并发送进度，不进入阶段2。
-// 对 TLS 节点额外做 TLS 握手检测，快速过滤 TCP 可达但 TLS 不可达的节点。
+// tcpPrescreen 对节点做 TCP+TLS 连通性预筛，通过预筛的节点送入 passedChan。
+// 单节点预算 = 主测速超时 × 3/4，TCP 拨号与 TLS 握手共享该 ctx，
+// 严格保证预筛最差耗时低于主测速超时。
 func (st *SpeedTest) tcpPrescreen(
 	nodes []Node,
 	passedChan chan<- Node,
@@ -189,16 +150,15 @@ func (st *SpeedTest) tcpPrescreen(
 	const (
 		prescreenFactor = 2
 		maxPrescreen    = 256
-		tlsTimeout      = 1500 * time.Millisecond
 	)
 	concurrency := st.cfg.Concurrency() * prescreenFactor
 	if concurrency > maxPrescreen {
 		concurrency = maxPrescreen
 	}
+	budget := st.cfg.Timeout() * 3 / 4
 
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, concurrency)
-
 	for _, node := range nodes {
 		wg.Add(1)
 		go func(n Node) {
@@ -217,46 +177,52 @@ func (st *SpeedTest) tcpPrescreen(
 				return
 			}
 
-			target := fmt.Sprintf("%s:%d", addr, port)
-			conn, err := dialTCPWithRetry(target)
+			ctx, cancel := context.WithTimeout(context.Background(), budget)
+			defer cancel()
+
+			// defer conn.Close() 统一覆盖 TLS 与非 TLS 路径，避免 fd 泄漏。
+			conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(addr, fmt.Sprintf("%d", port)))
 			if err != nil {
 				sendPrescreenFail(progressChan, n, done, succ, fail, total, fmt.Sprintf("tcp prescreen: %v", err))
 				return
 			}
+			defer conn.Close()
 
-			// TCP 可达后，对 TLS 节点额外做握手检测。
-			// checkTLS 内部 defer 保证 conn 在所有路径（含 panic）都被关闭，
-			// 避免 passedChan 阻塞时 fd 泄漏。
 			if sni := extractTLSServerName(n.Outbound); sni != "" {
-				if handshakeErr := checkTLS(conn, sni, tlsTimeout); handshakeErr != nil {
-					sendPrescreenFail(progressChan, n, done, succ, fail, total, fmt.Sprintf("tls prescreen: %v", handshakeErr))
+				tlsConn := tls.Client(conn, &tls.Config{ServerName: sni, InsecureSkipVerify: true})
+				if err := tlsConn.HandshakeContext(ctx); err != nil {
+					sendPrescreenFail(progressChan, n, done, succ, fail, total, fmt.Sprintf("tls prescreen: %v", err))
 					return
 				}
-			} else {
-				conn.Close()
 			}
-
 			passedChan <- n
 		}(node)
 	}
-
 	wg.Wait()
+}
+
+func sendProgress(ch chan<- Progress, p Progress) {
+	if ch == nil {
+		return
+	}
+	select {
+	case ch <- p:
+	default:
+	}
 }
 
 func sendPrescreenFail(progressChan chan<- Progress, n Node, done, succ, fail *atomic.Int64, total int, msg string) {
 	d := done.Add(1)
 	f := fail.Add(1)
-	if progressChan != nil {
-		progressChan <- Progress{
-			Total:     total,
-			Completed: int(d),
-			Success:   int(succ.Load()),
-			Failed:    int(f),
-			NodeID:    n.ID,
-			Latency:   -1,
-			ErrMsg:    msg,
-		}
-	}
+	sendProgress(progressChan, Progress{
+		Total:     total,
+		Completed: int(d),
+		Success:   int(succ.Load()),
+		Failed:    int(f),
+		NodeID:    n.ID,
+		Latency:   -1,
+		ErrMsg:    msg,
+	})
 }
 
 // testOutbounds 从 channel 读取节点做完整 xray 测速。
@@ -283,14 +249,12 @@ func (st *SpeedTest) testOutbounds(
 				if r := recover(); r != nil && !finished {
 					d := done.Add(1)
 					f := fail.Add(1)
-					if progressChan != nil {
-						progressChan <- Progress{
-							Total: total, Completed: int(d),
-							Success: int(succ.Load()), Failed: int(f),
-							NodeID: n.ID, Latency: -1,
-							ErrMsg: fmt.Sprintf("speedtest panic: %v", r),
-						}
-					}
+					sendProgress(progressChan, Progress{
+						Total: total, Completed: int(d),
+						Success: int(succ.Load()), Failed: int(f),
+						NodeID: n.ID, Latency: -1,
+						ErrMsg: fmt.Sprintf("speedtest panic: %v", r),
+					})
 				}
 				if acquired {
 					<-sem
@@ -300,41 +264,34 @@ func (st *SpeedTest) testOutbounds(
 			sem <- struct{}{}
 			acquired = true
 
-			if progressChan != nil {
-				progressChan <- Progress{
-					Total:     total,
-					Completed: int(done.Load()),
-					Success:   int(succ.Load()),
-					Failed:    int(fail.Load()),
-					NodeID:    n.ID,
-					Testing:   true,
-				}
-			}
+			sendProgress(progressChan, Progress{
+				Total:     total,
+				Completed: int(done.Load()),
+				Success:   int(succ.Load()),
+				Failed:    int(fail.Load()),
+				NodeID:    n.ID,
+				Testing:   true,
+			})
 
 			result := st.TestOutbound(n.Outbound, n.ID)
 
 			d := done.Add(1)
+			finished = true
 			if result.Error == "" {
 				s := succ.Add(1)
-				finished = true
-				if progressChan != nil {
-					progressChan <- Progress{
-						Total: total, Completed: int(d), Success: int(s),
-						Failed: int(fail.Load()), NodeID: result.NodeID,
-						Latency: result.Latency, Testing: false,
-					}
-				}
+				sendProgress(progressChan, Progress{
+					Total: total, Completed: int(d), Success: int(s),
+					Failed: int(fail.Load()), NodeID: result.NodeID,
+					Latency: result.Latency, Testing: false,
+				})
 			} else {
 				f := fail.Add(1)
-				finished = true
-				if progressChan != nil {
-					progressChan <- Progress{
-						Total: total, Completed: int(d),
-						Success: int(succ.Load()), Failed: int(f),
-						NodeID:  result.NodeID,
-						Latency: -1, ErrMsg: result.Error, Testing: false,
-					}
-				}
+				sendProgress(progressChan, Progress{
+					Total: total, Completed: int(d),
+					Success: int(succ.Load()), Failed: int(f),
+					NodeID: result.NodeID,
+					Latency: -1, ErrMsg: result.Error, Testing: false,
+				})
 			}
 		}()
 	}
@@ -438,11 +395,11 @@ func (st *SpeedTest) createInstance(outbound types.Map) (*core.Instance, error) 
 	return instance, nil
 }
 
+// measureDelay 通过独立 xray 实例测速。
+// core.Dial 包含完整代理链路（本地→节点→目标），各阶段共享 Client.Timeout 总预算。
 func (st *SpeedTest) measureDelay(instance *core.Instance) (int64, error) {
 	timeout := st.cfg.Timeout()
 	tr := &http.Transport{
-		TLSHandshakeTimeout: timeout,
-		DisableKeepAlives:   true,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			dest, err := xraynet.ParseDestination(fmt.Sprintf("%s:%s", network, addr))
 			if err != nil {
@@ -455,17 +412,17 @@ func (st *SpeedTest) measureDelay(instance *core.Instance) (int64, error) {
 	return st.measureWithClient(tr, timeout, st.getTargetURL())
 }
 
+// measureDelayViaProxy 通过主 xray 的 socks 端口测速（网站测速用）。
 func (st *SpeedTest) measureDelayViaProxy(socksPort int, targetURL string) (int64, error) {
 	timeout := st.cfg.Timeout()
-	proxyURL := fmt.Sprintf("socks5://127.0.0.1:%d", socksPort)
-	tr := &http.Transport{
-		TLSHandshakeTimeout: timeout,
-		DisableKeepAlives:   true,
-		Proxy:               func(*http.Request) (*url.URL, error) { return url.Parse(proxyURL) },
+	parsed, err := url.Parse(fmt.Sprintf("socks5://127.0.0.1:%d", socksPort))
+	if err != nil {
+		return -1, err
 	}
+	tr := &http.Transport{Proxy: http.ProxyURL(parsed)}
 	defer tr.CloseIdleConnections()
 	if targetURL == "" {
-		return st.measureWithClient(tr, timeout, st.getTargetURL())
+		targetURL = st.getTargetURL()
 	}
 	return st.measureWithClient(tr, timeout, targetURL)
 }
@@ -484,8 +441,7 @@ func (st *SpeedTest) measureWithClient(tr *http.Transport, timeout time.Duration
 		return -1, err
 	}
 	defer resp.Body.Close()
-
-	_, _ = io.Copy(io.Discard, resp.Body)
+	// 不读 body：延迟只测 TCP+TLS+首字节，避免 body 大小差异污染延迟值
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
 		return -1, fmt.Errorf("bad status: %d", resp.StatusCode)

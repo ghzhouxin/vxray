@@ -5,14 +5,13 @@ import (
 )
 
 type Log struct {
-	ID          uint      `json:"id" gorm:"primaryKey"`
-	OperationID string    `json:"-" gorm:"index"`
-	Level       string    `json:"level" gorm:"column:level;index"`
-	Message     string    `json:"message"`
-	Tag         string    `json:"tag" gorm:"column:tag;index"`
-	Detail      string    `json:"detail"`
-	CreatedAt   time.Time `json:"created_at" gorm:"index"`
-	UpdatedAt   time.Time `json:"updated_at" gorm:"index"`
+	ID        uint      `json:"id" gorm:"primaryKey"`
+	Level     string    `json:"level" gorm:"column:level;index"`
+	Message   string    `json:"message"`
+	Tag       string    `json:"tag" gorm:"column:tag;index"`
+	Detail    string    `json:"detail"`
+	CreatedAt time.Time `json:"created_at" gorm:"index"`
+	UpdatedAt time.Time `json:"updated_at" gorm:"index"`
 }
 
 func (Log) TableName() string {

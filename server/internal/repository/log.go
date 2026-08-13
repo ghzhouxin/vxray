@@ -24,10 +24,6 @@ func NewLogRepository(db *gorm.DB) *LogRepository { return &LogRepository{db: db
 
 func (r *LogRepository) Create(log *model.Log) error { return r.db.Create(log).Error }
 
-func (r *LogRepository) UpdateOperation(operationID string, updates map[string]any) error {
-	return r.db.Model(&model.Log{}).Where("operation_id = ?", operationID).Updates(updates).Error
-}
-
 func (r *LogRepository) FindByFilter(filter model.LogFilter) ([]model.Log, string, error) {
 	var logs []model.Log
 	query := r.db.Model(&model.Log{})

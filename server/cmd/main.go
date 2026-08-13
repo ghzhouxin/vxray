@@ -65,7 +65,8 @@ func run() error {
 
 func startServer(system config.SystemMeta, db *gorm.DB, services *service.Container) error {
 	gin.SetMode(gin.ReleaseMode)
-	r := gin.Default()
+	r := gin.New()
+	r.Use(gin.Recovery())
 	api.SetupRoutes(r, services)
 	registerStaticWebRoutes(r, system.Web.Root)
 

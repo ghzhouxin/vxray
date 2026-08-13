@@ -13,8 +13,8 @@ export function useSpeedTest(ctx: RefreshContext) {
   const operationStore = useOperationStore()
   const xrayStore = useXrayStore()
   const settingsStore = useSettingsStore()
-  const { refreshConsoleAndNodes, refreshLogsSilently, showLogs } = ctx
-  const { execute } = useActionExecutor(ctx)
+  const { refreshConsoleAndNodes } = ctx
+  const { execute } = useActionExecutor()
 
   const autoSpeedTestPending = ref(false)
 
@@ -33,7 +33,7 @@ export function useSpeedTest(ctx: RefreshContext) {
     return {
       title: '节点测速',
       completed: active.completed, total: active.total,
-      available: active.success, timeout: active.failed
+      available: active.success, timeout: active.failed, failed: active.failed
     }
   })
 
@@ -56,7 +56,6 @@ export function useSpeedTest(ctx: RefreshContext) {
         operationStore.applyProgress(progress)
         operationStore.clear()
         await refreshConsoleAndNodes().catch(e => { console.warn(e); /* 静默刷新，不干扰用户 */ })
-        await refreshLogsSilently()
       }
     } catch (e) { console.warn(e); /* 静默刷新，不干扰用户 */ }
   }
@@ -78,19 +77,18 @@ export function useSpeedTest(ctx: RefreshContext) {
     stopStatusPolling()
     stopNodeRefresh()
     startNodeRefresh()
-    showLogs()
     operationStore.start('node_speedtest')
     let keepRestoredJob = false
     try {
       const lastProgress = await nodeStore.speedTest(payload, progress => operationStore.applyProgress(progress))
-      if (lastProgress?.status === 'empty') { await refreshLogsSilently(); msg.warning(lastProgress.message || '当前筛选无可测速节点'); return }
+      if (lastProgress?.status === 'empty') { msg.warning(lastProgress.message || '当前筛选无可测速节点'); return }
       if (lastProgress?.status === 'failed') throw new Error(lastProgress.error || lastProgress.message || '测速失败')
-      await refreshConsoleAndNodes(); await refreshLogsSilently()
+      await refreshConsoleAndNodes()
       if (successMessage) msg.success(successMessage)
     } catch (error) {
       const runningStatus = getRunningSpeedTestStatus(error)
       if (runningStatus) { keepRestoredJob = true; restoreRunningJob(runningStatus, '已有测速任务执行中'); return }
-      await refreshConsoleAndNodes().catch(e => { console.warn(e); /* 静默刷新，不干扰用户 */ }); await refreshLogsSilently()
+      await refreshConsoleAndNodes().catch(e => { console.warn(e); /* 静默刷新，不干扰用户 */ })
       const status = await nodeStore.fetchSpeedTestStatus().catch(e => { console.warn(e); return null })
       if (status?.running) { keepRestoredJob = true; restoreRunningJob(status, '测速仍在后台执行'); return }
       handleError(error, SPEED_TEST_FAILED)
@@ -130,8 +128,7 @@ export function useSpeedTest(ctx: RefreshContext) {
       {
         refreshAfterAction: refreshConsoleAndNodes,
         loading: autoSpeedTestPending,
-        errorMsg: '自动测速启动失败',
-        skipLogsRefresh: true
+        errorMsg: '自动测速启动失败'
       }
     )
   }

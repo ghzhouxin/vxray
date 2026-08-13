@@ -48,6 +48,9 @@ func (s *State) loadSettings() error {
 	s.settings = DefaultUserSettings()
 	speedTestLoaded := s.loadSettingKeySilent("speedtest", &s.settings.SpeedTest)
 	geoLoaded := s.loadSettingKeySilent("geo", &s.settings.Geo)
+	var activeNodeID uint
+	s.loadSettingKeySilent("active_node_id", &activeNodeID)
+	s.activeNodeID = activeNodeID
 	if !speedTestLoaded || !geoLoaded {
 		return s.SaveUserSettings()
 	}

@@ -10,7 +10,7 @@ interface NodeActionOptions {
 
 export function useNodeActions(options: NodeActionOptions) {
   const nodeStore = useNodeStore()
-  const { execute } = useActionExecutor(options.refreshContext)
+  const { execute } = useActionExecutor()
   const { refreshConsoleAndNodes } = options.refreshContext
 
   const deletingFailedNodes = ref(false)
@@ -18,7 +18,6 @@ export function useNodeActions(options: NodeActionOptions) {
   async function handleUseNode(node: Node) {
     const ok = await execute(() => nodeStore.activateNode(node.id), {
       refreshAfterAction: refreshConsoleAndNodes,
-      showLogsBefore: true,
       successMsg: `已切换节点: ${node.name}`,
       errorMsg: '切换节点失败'
     })

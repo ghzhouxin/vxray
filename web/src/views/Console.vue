@@ -20,11 +20,11 @@
         </svg>
         <span>VXRAY</span>
       </div>
-      <div v-if="speedTestTaskStatus" class="task-status-bar">
-        <span class="task-title">{{ speedTestTaskStatus.title }}</span>
-        <span class="task-progress">{{ formatTaskNumber(speedTestTaskStatus.completed, speedTestTaskStatus.total) }}<span class="sep">/</span>{{ formatTaskNumber(speedTestTaskStatus.total, speedTestTaskStatus.total) }}</span>
-        <span class="task-metric success">可用 {{ formatTaskNumber(speedTestTaskStatus.available, speedTestTaskStatus.total) }}</span>
-        <span class="task-metric failed">超时 {{ formatTaskNumber(speedTestTaskStatus.timeout, speedTestTaskStatus.total) }}</span>
+      <div v-if="activeTaskStatus" class="task-status-bar">
+        <span class="task-title">{{ activeTaskStatus.title }}</span>
+        <span class="task-progress">{{ formatTaskNumber(activeTaskStatus.completed, activeTaskStatus.total) }}<span class="sep">/</span>{{ formatTaskNumber(activeTaskStatus.total, activeTaskStatus.total) }}</span>
+        <span class="task-metric success">可用 {{ formatTaskNumber(activeTaskStatus.available, activeTaskStatus.total) }}</span>
+        <span class="task-metric failed">失败 {{ formatTaskNumber(activeTaskStatus.failed, activeTaskStatus.total) }}</span>
       </div>
       <div class="node-summary">
         <span>全部 <strong>{{ nodeSummary.all || '-' }}</strong></span>
@@ -135,7 +135,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onKeyStroke } from '@vueuse/core'
 import ControlPanel from '@/components/console/ControlPanel.vue'
 import LogPanel from '@/components/console/LogPanel.vue'
@@ -176,7 +176,6 @@ const {
   loadLogs,
   loadMore: loadMoreLogs,
   clearLogs,
-  showLogs,
   handleConsoleClick
 } = useConsoleLogs(() => [
   controlPanelRef.value?.$el,
@@ -187,10 +186,10 @@ const {
 
 const {
   nodeSummary, runtimePorts,
-  refreshConsole, refreshNodes, refreshConsoleAndNodes, refreshLogsSilently
-} = useConsoleRefresh({ applyLogsSnapshot, loadLogs })
+  refreshConsole, refreshNodes, refreshConsoleAndNodes
+} = useConsoleRefresh({ applyLogsSnapshot })
 
-const refreshContext = { refreshConsoleAndNodes, refreshLogsSilently, showLogs }
+const refreshContext = { refreshConsoleAndNodes }
 
 const {
   speedTestTaskStatus,
@@ -199,6 +198,21 @@ const {
   triggerAutoSpeedTest,
   restoreSpeedTestStatus, cleanup: cleanupSpeedTest
 } = useSpeedTest(refreshContext)
+
+const activeTaskStatus = computed(() => {
+  const active = operationStore.active
+  if (!active || active.status !== 'running') return null
+  if (active.type === 'subscription_update') {
+    return {
+      title: '订阅同步',
+      completed: active.completed,
+      total: active.total || 1,
+      available: active.success,
+      failed: active.failed,
+    }
+  }
+  return speedTestTaskStatus.value
+})
 
 const { batchLoading: batchWebsiteSpeedTestLoading, batchProgress: batchWebsiteSpeedTestProgress, runBatch: handleBatchWebsiteSpeedTest } = useBatchWebsiteSpeedTest(refreshContext)
 

@@ -37,6 +37,5 @@ export const DIALOG_WIDTH_DEFAULT = '550px'
 
 export const NO_AVAILABLE_NODE = '暂无可用节点'
 export const SPEED_TEST_FAILED = '测速失败'
-export const BATCH_EARLY_STOP_RATIO = 0.75 // 批量网站测速早退阈值：ok 比率达到即停止
 export const ALL_OPTION_LABEL = '全部'
 export const ALL_OPTION_VALUE = ''

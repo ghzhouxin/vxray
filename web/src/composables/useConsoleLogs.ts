@@ -56,6 +56,7 @@ export function useConsoleLogs(getSafeEls?: () => HTMLElement[]) {
   }
 
   async function loadLogs(reset = true) {
+    if (loading.value) return
     loading.value = true
     try {
       const result = await logsApi.getLogs({
@@ -63,7 +64,12 @@ export function useConsoleLogs(getSafeEls?: () => HTMLElement[]) {
         cursor: reset ? undefined : nextCursor.value || undefined,
         limit: LOG_DEFAULT_PAGE_SIZE
       })
-      logs.value = reset ? result.items : [...logs.value, ...result.items]
+      if (reset && logs.value.length > LOG_DEFAULT_PAGE_SIZE) {
+        // 已加载历史：自动刷新只合并新日志，不整表替换（否则滚动加载的历史被抹掉）
+        mergeNewLogs(result.items)
+      } else {
+        logs.value = reset ? result.items : [...logs.value, ...result.items]
+      }
       tags.value = result.tags
       levels.value = result.levels
       nextCursor.value = result.next_cursor
@@ -71,6 +77,13 @@ export function useConsoleLogs(getSafeEls?: () => HTMLElement[]) {
     } finally {
       loading.value = false
     }
+  }
+
+  function mergeNewLogs(items: Log[]) {
+    if (!items.length) return
+    const known = new Set(logs.value.map(l => l.id))
+    const fresh = items.filter(l => !known.has(l.id))
+    if (fresh.length) logs.value = [...fresh, ...logs.value]
   }
 
   async function loadMore() { if (hasMore.value && !loading.value) await loadLogs(false) }
@@ -92,8 +105,6 @@ export function useConsoleLogs(getSafeEls?: () => HTMLElement[]) {
     }
   }
 
-  function showLogs() { collapsed.value = false }
-
   function handleConsoleClick(event: MouseEvent) {
     if (collapsed.value) return
     const target = event.target as HTMLElement | null
@@ -113,7 +124,6 @@ export function useConsoleLogs(getSafeEls?: () => HTMLElement[]) {
     loadLogs,
     loadMore,
     clearLogs,
-    showLogs,
     handleConsoleClick
   }
 }

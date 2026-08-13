@@ -27,7 +27,7 @@ func LatencyStatus(latency int64) string {
 
 const (
 	DefaultLogPageSize = 50
-	NodeBatchSize      = 50 // SQLite 变量数限制 999，每 Node 13 列，50×13=650 安全
+	NodeBatchSize      = 50
 )
 
 const (
@@ -42,6 +42,7 @@ const (
 )
 
 const (
+	TagApp          = "app"
 	TagSpeedtest    = "speed"
 	TagSubscription = "subs"
 	TagXray         = "xray"
@@ -58,6 +59,6 @@ const (
 
 var LogLevels = []string{LevelDebug, LevelInfo, LevelWarn, LevelError}
 
-var LogTags = []string{TagSpeedtest, TagSubscription, TagXray, TagGeo, TagTun}
+var LogTags = []string{TagApp, TagSpeedtest, TagSubscription, TagXray, TagGeo, TagTun}
 
 var NodeProtocols = []string{"vless", "vmess", "trojan", "shadowsocks"}

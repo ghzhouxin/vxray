@@ -10,7 +10,7 @@
     </div>
     <template #footer>
       <div class="settings-footer">
-        <IconButton block label="重置" :size="ICON_BUTTON_SIZE_SM" tone="muted" @click="handleResetDefault"><RefreshLeft /></IconButton>
+        <IconButton block label="重置" :size="ICON_BUTTON_SIZE_SM" tone="muted" :working="settingsStore.settingsSaving" :disabled="settingsStore.settingsSaving" @click="handleResetDefault"><RefreshLeft /></IconButton>
         <IconButton block label="取消" :size="ICON_BUTTON_SIZE_SM" tone="muted" @click="emit('update:modelValue', false)"><Close /></IconButton>
         <IconButton block label="保存" :size="ICON_BUTTON_SIZE_SM" tone="primary" :working="settingsStore.settingsSaving" :disabled="settingsStore.settingsSaving" @click="emit('save')"><Check /></IconButton>
       </div>
@@ -45,9 +45,14 @@ const settingsStore = useSettingsStore()
 const geoSourceNames = computed(() => Object.keys(settingsStore.systemMeta.assets.geo_sources || {}))
 const geoSourceOptions = computed(() => geoSourceNames.value.map(name => ({ label: name, value: name })))
 
-function handleResetDefault() {
-  settingsStore.restoreDefaultUserSettings()
-  msg.success('已恢复默认值，请保存以生效')
+async function handleResetDefault() {
+  try {
+    await settingsStore.resetAndSaveUserSettings()
+    msg.success('已重置为默认值并保存')
+  } catch (e) {
+    console.warn('[SystemSettingsDialog] 重置失败', e)
+    msg.error('重置失败')
+  }
 }
 </script>
 

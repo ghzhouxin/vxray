@@ -16,6 +16,8 @@ import (
 	"v2ray-server/pkg/subscription"
 	"v2ray-server/pkg/types"
 	"v2ray-server/pkg/xray"
+
+	"gorm.io/gorm"
 )
 
 // NodeInfo 是 model.Node 的服务层投影，补充 ProtocolLabel 等派生字段。
@@ -32,22 +34,6 @@ type NodeInfo struct {
 	Latency        int64           `json:"latency"`
 	CreatedAt      time.Time       `json:"created_at"`
 	UpdatedAt      time.Time       `json:"updated_at"`
-}
-
-// OperationProgress 是节点测速任务向订阅者（SSE）推送的进度事件。
-type OperationProgress struct {
-	Type      string `json:"type"`
-	Status    string `json:"status"`
-	Stage     string `json:"stage"`
-	Total     int    `json:"total"`
-	Completed int    `json:"completed"`
-	Success   int    `json:"success"`
-	Failed    int    `json:"failed"`
-	NodeID    uint   `json:"node_id,omitempty"`
-	Latency   int64  `json:"latency,omitempty"`
-	Error     string `json:"error,omitempty"`
-	Message   string `json:"message,omitempty"`
-	Testing   bool   `json:"testing"`
 }
 
 // NodeSpeedTestStatus 是节点测速任务的当前状态。
@@ -80,26 +66,14 @@ type NodeService struct {
 	cfg       *config.State
 	logSvc    *LogService
 	speedMu   sync.Mutex
-	speedJob  *nodeSpeedTestJob
+	speedBus  *ProgressBus
 }
 
-const (
-	progressChanBuffer       = 100
-	batchProgressStepNode    = 10
-	batchProgressStepPercent = 10
-)
+const progressChanBuffer = 100
 
 type NodeSpeedTestSelection struct {
 	IDs    []uint
 	Filter model.NodeFilter
-}
-
-type nodeSpeedTestJob struct {
-	running      bool
-	lastProgress *OperationProgress
-	startedAt    time.Time
-	finishedAt   time.Time
-	subscribers  map[chan OperationProgress]struct{}
 }
 
 var ErrNodeSpeedTestRunning = errors.New("node_speedtest_running")
@@ -154,6 +128,11 @@ func (s *NodeService) RestoreActiveOutbound() error {
 	}
 	node, err := s.repo.FindByID(activeID)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// 节点已随订阅删除，清空持久化的 active id
+			_ = s.cfg.SetActiveNodeID(0)
+			return nil
+		}
 		return fmt.Errorf("find active node %d: %w", activeID, err)
 	}
 	parsed, err := subscription.Parse(node.RawURL)
@@ -179,72 +158,66 @@ func (s *NodeService) Get(id uint) (*model.Node, error) {
 
 func (s *NodeService) StartSpeedTestJob(selection NodeSpeedTestSelection) (*NodeSpeedTestStatus, error) {
 	s.speedMu.Lock()
-	if s.speedJob != nil && s.speedJob.running {
-		status := s.speedTestStatusLocked()
+	if s.speedBus != nil && s.speedBus.IsRunning() {
+		status := s.speedTestStatus()
 		s.speedMu.Unlock()
 		return status, ErrNodeSpeedTestRunning
 	}
 
-	job := &nodeSpeedTestJob{
-		running:     true,
-		startedAt:   time.Now(),
-		subscribers: make(map[chan OperationProgress]struct{}),
-	}
-	job.lastProgress = &OperationProgress{
+	bus := NewProgressBus()
+	bus.Start()
+	bus.Publish(OperationProgress{
 		Type:    "node_speedtest",
 		Status:  "running",
 		Stage:   "prepare",
 		Message: "准备节点测速",
-	}
-	s.speedJob = job
-	status := s.speedTestStatusLocked()
+	}, false)
+	s.speedBus = bus
+	status := s.speedTestStatus()
 	s.speedMu.Unlock()
 
-	go s.runSpeedTestJob(selection, job)
+	go s.runSpeedTestJob(selection, bus)
 	return status, nil
 }
 
 func (s *NodeService) SpeedTestStatus() *NodeSpeedTestStatus {
 	s.speedMu.Lock()
 	defer s.speedMu.Unlock()
-	return s.speedTestStatusLocked()
+	return s.speedTestStatus()
+}
+
+func (s *NodeService) speedTestStatus() *NodeSpeedTestStatus {
+	if s.speedBus == nil {
+		return &NodeSpeedTestStatus{Running: false}
+	}
+	status := &NodeSpeedTestStatus{
+		Running:   s.speedBus.IsRunning(),
+		Progress:  s.speedBus.Last(),
+		StartedAt: formatOptionalTime(s.speedBus.StartedAt()),
+	}
+	if finishedAt := s.speedBus.FinishedAt(); !finishedAt.IsZero() {
+		status.FinishedAt = finishedAt.Format(time.RFC3339)
+	}
+	if status.Running && status.Progress != nil && status.Progress.Error != "" {
+		status.Error = status.Progress.Error
+	}
+	return status
 }
 
 func (s *NodeService) SubscribeSpeedTestProgress() (<-chan OperationProgress, func()) {
-	ch := make(chan OperationProgress, progressChanBuffer)
 	s.speedMu.Lock()
-	job := s.speedJob
-	if job == nil {
-		close(ch)
-		s.speedMu.Unlock()
-		return ch, func() {}
-	}
-
-	running := job.running
-	lastProgress := cloneOperationProgress(job.lastProgress)
-	if running {
-		job.subscribers[ch] = struct{}{}
-	}
+	bus := s.speedBus
 	s.speedMu.Unlock()
 
-	if lastProgress != nil {
-		ch <- *lastProgress
-	}
-	if !running {
+	if bus == nil {
+		ch := make(chan OperationProgress)
 		close(ch)
+		return ch, func() {}
 	}
-
-	return ch, func() {
-		s.speedMu.Lock()
-		if job := s.speedJob; job != nil && job.subscribers != nil {
-			delete(job.subscribers, ch)
-		}
-		s.speedMu.Unlock()
-	}
+	return bus.Subscribe()
 }
 
-func (s *NodeService) runSpeedTestJob(selection NodeSpeedTestSelection, job *nodeSpeedTestJob) {
-	var op *OperationLog
+func (s *NodeService) runSpeedTestJob(selection NodeSpeedTestSelection, bus *ProgressBus) {
 	var wrappedChan chan speedtest.Progress
 	defer func() {
 		if r := recover(); r != nil {
@@ -252,77 +225,54 @@ func (s *NodeService) runSpeedTestJob(selection NodeSpeedTestSelection, job *nod
 				close(wrappedChan)
 			}
 			message := fmt.Sprintf("节点测速异常: %v", r)
-			_ = op.Fail("节点测速异常", map[string]any{"error": message})
-			s.publishSpeedTestProgress(job, OperationProgress{
+			s.logSvc.Error(constants.TagSpeedtest, "节点测速异常", map[string]any{"error": message})
+			bus.Publish(OperationProgress{
 				Type:    "node_speedtest",
 				Status:  "failed",
 				Stage:   "panic",
 				Error:   message,
 				Message: "节点测速异常",
-			})
+			}, true)
 		}
 	}()
 
-	op = s.startSpeedTestOperation("准备节点测速", map[string]any{
-		"ids":    selection.IDs,
-		"filter": selection.Filter,
-	})
+	s.logSvc.Info(constants.TagSpeedtest, "准备节点测速", map[string]any{"ids": selection.IDs, "filter": selection.Filter})
 
 	nodes, err := s.resolveSpeedTestNodes(selection)
 	if err != nil {
-		_ = op.Fail("节点测速准备失败", map[string]any{"error": err.Error()})
-		s.publishSpeedTestProgress(job, OperationProgress{
+		s.logSvc.Error(constants.TagSpeedtest, "节点测速准备失败", map[string]any{"error": err.Error()})
+		bus.Publish(OperationProgress{
 			Type:    "node_speedtest",
 			Status:  "failed",
 			Stage:   "prepare",
 			Error:   err.Error(),
 			Message: "节点测速准备失败",
-		})
+		}, true)
 		return
 	}
 
 	if len(nodes) == 0 {
-		detail := map[string]any{"total": 0}
-		_ = op.Success("当前筛选无可测速节点", detail)
-		s.publishSpeedTestProgress(job, OperationProgress{
+		s.logSvc.Info(constants.TagSpeedtest, "当前筛选无可测速节点", map[string]any{"total": 0})
+		bus.Publish(OperationProgress{
 			Type:    "node_speedtest",
 			Status:  "empty",
 			Stage:   "empty",
 			Message: "当前筛选无可测速节点",
-		})
+		}, true)
 		return
 	}
 
-	_ = op.Update("开始节点测速", map[string]any{"total": len(nodes)})
-	s.publishSpeedTestProgress(job, OperationProgress{
+	s.logSvc.Info(constants.TagSpeedtest, "开始节点测速", map[string]any{"total": len(nodes)})
+	bus.Publish(OperationProgress{
 		Type:    "node_speedtest",
 		Status:  "running",
 		Stage:   "start",
 		Total:   len(nodes),
 		Message: "开始节点测速",
-	})
+	}, false)
 
-	wrappedChan = s.createJobProgressWrapper(job, op)
+	wrappedChan = s.createJobProgressWrapper(bus)
 	s.speedTest.TestNodes(toSpeedNodes(nodes), wrappedChan)
-}
-
-func (s *NodeService) speedTestStatusLocked() *NodeSpeedTestStatus {
-	if s.speedJob == nil {
-		return &NodeSpeedTestStatus{Running: false}
-	}
-
-	status := &NodeSpeedTestStatus{
-		Running:   s.speedJob.running,
-		Progress:  cloneOperationProgress(s.speedJob.lastProgress),
-		StartedAt: formatOptionalTime(s.speedJob.startedAt),
-	}
-	if !s.speedJob.finishedAt.IsZero() {
-		status.FinishedAt = s.speedJob.finishedAt.Format(time.RFC3339)
-	}
-	if status.Running && status.Progress != nil && status.Progress.Error != "" {
-		status.Error = status.Progress.Error
-	}
-	return status
 }
 
 func (s *NodeService) resolveSpeedTestNodes(selection NodeSpeedTestSelection) ([]*model.Node, error) {
@@ -359,20 +309,25 @@ func uniqueUintIDs(ids []uint) []uint {
 	return result
 }
 
-func (s *NodeService) createJobProgressWrapper(job *nodeSpeedTestJob, op *OperationLog) chan speedtest.Progress {
+func (s *NodeService) createJobProgressWrapper(bus *ProgressBus) chan speedtest.Progress {
 	wrappedChan := make(chan speedtest.Progress, progressChanBuffer)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				message := fmt.Sprintf("节点测速进度处理异常: %v", r)
-				_ = op.Fail("节点测速异常", map[string]any{"error": message})
-				s.publishSpeedTestProgress(job, OperationProgress{
+				s.logSvc.Error(constants.TagSpeedtest, "节点测速异常", map[string]any{"error": message})
+				bus.Publish(OperationProgress{
 					Type:    "node_speedtest",
 					Status:  "failed",
 					Stage:   "panic",
 					Error:   message,
 					Message: "节点测速异常",
-				})
+				}, true)
+				return
+			}
+			// 正常结束：标记总线为终止状态，防止前端刷新后误判为“测速任务恢复中”
+			if last := bus.Last(); last != nil {
+				bus.Publish(*last, true)
 			}
 		}()
 
@@ -380,7 +335,7 @@ func (s *NodeService) createJobProgressWrapper(job *nodeSpeedTestJob, op *Operat
 		pending := make([]repository.LatencyUpdate, 0, batchWriteSize)
 		flush := func() {
 			if len(pending) > 0 {
-				if err := s.repo.BatchUpdateLatency(pending); err != nil && s.logSvc != nil {
+				if err := s.repo.BatchUpdateLatency(pending); err != nil {
 					s.logSvc.Error(constants.TagSpeedtest, "批量更新节点延迟失败", map[string]any{"count": len(pending), "error": err.Error()})
 				}
 				pending = pending[:0]
@@ -388,8 +343,6 @@ func (s *NodeService) createJobProgressWrapper(job *nodeSpeedTestJob, op *Operat
 		}
 		defer flush()
 
-		lastPercent := -1
-		lastCompletedStep := 0
 		for p := range wrappedChan {
 			if p.NodeID > 0 && !p.Testing {
 				pending = append(pending, repository.LatencyUpdate{ID: p.NodeID, Latency: p.Latency})
@@ -406,10 +359,6 @@ func (s *NodeService) createJobProgressWrapper(job *nodeSpeedTestJob, op *Operat
 				message = "节点测速完成"
 			}
 
-			if !p.Testing && s.shouldLogBatchProgress(p, &lastPercent, &lastCompletedStep) {
-				_ = op.Update("节点测速进行中", speedTestProgressDetail(p))
-			}
-
 			if !p.Testing && p.Total > 0 && p.Completed == p.Total {
 				status = "success"
 				stage = "finished"
@@ -417,13 +366,13 @@ func (s *NodeService) createJobProgressWrapper(job *nodeSpeedTestJob, op *Operat
 				if p.Success == 0 && p.Failed > 0 {
 					status = "failed"
 					message = "节点测速失败"
-					_ = op.Fail("节点测速失败", speedTestProgressDetail(p))
+					s.logSvc.Error(constants.TagSpeedtest, "节点测速失败", speedTestProgressDetail(p))
 				} else {
-					_ = op.Success("节点测速完成", speedTestProgressDetail(p))
+					s.logSvc.Info(constants.TagSpeedtest, "节点测速完成", speedTestProgressDetail(p))
 				}
 			}
 
-			s.publishSpeedTestProgress(job, OperationProgress{
+			bus.Publish(OperationProgress{
 				Type:      "node_speedtest",
 				Status:    status,
 				Stage:     stage,
@@ -436,52 +385,10 @@ func (s *NodeService) createJobProgressWrapper(job *nodeSpeedTestJob, op *Operat
 				Error:     p.ErrMsg,
 				Message:   message,
 				Testing:   p.Testing,
-			})
+			}, false)
 		}
 	}()
 	return wrappedChan
-}
-
-func (s *NodeService) publishSpeedTestProgress(job *nodeSpeedTestJob, progress OperationProgress) {
-	s.speedMu.Lock()
-	if s.speedJob != job {
-		s.speedMu.Unlock()
-		return
-	}
-
-	job.lastProgress = cloneOperationProgress(&progress)
-	terminal := progress.Status != "running"
-	if terminal {
-		job.running = false
-		job.finishedAt = time.Now()
-	}
-
-	subscribers := make([]chan OperationProgress, 0, len(job.subscribers))
-	for ch := range job.subscribers {
-		subscribers = append(subscribers, ch)
-	}
-	if terminal {
-		job.subscribers = make(map[chan OperationProgress]struct{})
-	}
-	s.speedMu.Unlock()
-
-	for _, ch := range subscribers {
-		select {
-		case ch <- progress:
-		default:
-		}
-		if terminal {
-			close(ch)
-		}
-	}
-}
-
-func cloneOperationProgress(progress *OperationProgress) *OperationProgress {
-	if progress == nil {
-		return nil
-	}
-	cloned := *progress
-	return &cloned
 }
 
 func formatOptionalTime(value time.Time) string {
@@ -522,14 +429,6 @@ func ToNodeInfos(nodes []*model.Node) []NodeInfo {
 		})
 	}
 	return infos
-}
-
-func (s *NodeService) startSpeedTestOperation(message string, detail map[string]any) *OperationLog {
-	op, opErr := s.logSvc.StartOperation(constants.TagSpeedtest, message, detail)
-	if opErr != nil {
-		s.logSvc.Error(constants.TagSpeedtest, "启动操作日志失败", map[string]any{"message": message, "error": opErr.Error()})
-	}
-	return op
 }
 
 func (s *NodeService) SetActive(id uint) error {
@@ -669,26 +568,3 @@ func nodeMatchesKeyword(node *model.Node, keyword string) bool {
 	return portStr == keyword || contains(portStr)
 }
 
-func (s *NodeService) shouldLogBatchProgress(p speedtest.Progress, lastPercent *int, lastCompletedStep *int) bool {
-	if p.Total <= 0 || p.Completed <= 0 {
-		return false
-	}
-	if p.Completed == p.Total {
-		return false
-	}
-	if p.Completed == 1 {
-		*lastCompletedStep = 1
-		*lastPercent = max(*lastPercent, 0)
-		return true
-	}
-	if p.Completed >= *lastCompletedStep+batchProgressStepNode {
-		*lastCompletedStep = p.Completed
-		return true
-	}
-	percent := p.Completed * 100 / p.Total
-	if percent >= *lastPercent+batchProgressStepPercent {
-		*lastPercent = percent
-		return true
-	}
-	return false
-}

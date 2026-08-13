@@ -9,10 +9,12 @@ import (
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func Init(path string) (*gorm.DB, error) {
-	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("%s?_busy_timeout=%d", path, constants.SQLiteBusyTimeoutMs)), &gorm.Config{})
+	dsn := fmt.Sprintf("%s?_busy_timeout=%d&_journal_mode=WAL", path, constants.SQLiteBusyTimeoutMs)
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{Logger: logger.Discard})
 	if err != nil {
 		return nil, err
 	}

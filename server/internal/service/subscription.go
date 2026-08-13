@@ -22,9 +22,9 @@ import (
 type SubscriptionService struct {
 	repo     *repository.SubscriptionRepository
 	nodeRepo *repository.NodeRepository
-	logSvc   *LogService
 	logger   *TaggedLogger
 	client   *http.Client
+	batchBus *ProgressBus
 }
 
 // BatchUpdateResult 汇总批量订阅更新的结果。
@@ -34,14 +34,22 @@ type BatchUpdateResult struct {
 	Failed  int `json:"failed"`
 }
 
-func NewSubscriptionService(db *gorm.DB, logger *LogService, nodeRepo *repository.NodeRepository) *SubscriptionService {
+func NewSubscriptionService(db *gorm.DB, logSvc *LogService, nodeRepo *repository.NodeRepository) *SubscriptionService {
 	return &SubscriptionService{
 		repo:     repository.NewSubscriptionRepository(db),
 		nodeRepo: nodeRepo,
-		logSvc:   logger,
-		logger:   logger.NewTaggedLogger(constants.TagSubscription),
+		logger:   logSvc.NewTaggedLogger(constants.TagSubscription),
 		client:   utils.LongRunningHTTPClient(),
 	}
+}
+
+func (s *SubscriptionService) SubscribeBatchProgress() (<-chan OperationProgress, func()) {
+	if s.batchBus == nil {
+		ch := make(chan OperationProgress)
+		close(ch)
+		return ch, func() {}
+	}
+	return s.batchBus.Subscribe()
 }
 
 func (s *SubscriptionService) log(op string, id uint, name string, err error) {
@@ -52,11 +60,9 @@ func (s *SubscriptionService) log(op string, id uint, name string, err error) {
 	}
 }
 
-func (s *SubscriptionService) failUpdate(id uint, op *OperationLog, message string, err error) error {
+func (s *SubscriptionService) failUpdate(id uint, message string, err error) error {
 	s.updateSyncStatus(id, "failed", nil)
-	if op != nil {
-		_ = op.Fail(message, map[string]any{"id": id, "error": err.Error()})
-	}
+	s.logger.Error(message, map[string]any{"id": id, "error": err.Error()})
 	return err
 }
 
@@ -107,13 +113,69 @@ func (s *SubscriptionService) UpdateNodesBatch(ctx context.Context, ids []uint) 
 	}
 
 	result := &BatchUpdateResult{Total: len(targetIDs)}
-	for _, id := range targetIDs {
+
+	bus := NewProgressBus()
+	bus.Start()
+	s.batchBus = bus
+
+	bus.Publish(OperationProgress{
+		Type:    "subscription_update",
+		Status:  "running",
+		Total:   result.Total,
+		Message: "开始更新订阅",
+	}, false)
+
+	for i, id := range targetIDs {
+		bus.Publish(OperationProgress{
+			Type:      "subscription_update",
+			Status:    "running",
+			Total:     result.Total,
+			Completed: i + 1,
+			Success:   result.Success,
+			Failed:    result.Failed,
+			NodeID:    id,
+			Message:   "正在更新订阅",
+		}, false)
 		if err := s.UpdateNodes(ctx, id); err != nil {
 			result.Failed++
+			bus.Publish(OperationProgress{
+				Type:      "subscription_update",
+				Status:    "running",
+				Total:     result.Total,
+				Completed: i + 1,
+				Success:   result.Success,
+				Failed:    result.Failed,
+				NodeID:    id,
+				Message:   "订阅更新失败",
+				Error:     err.Error(),
+			}, false)
 			continue
 		}
 		result.Success++
+		bus.Publish(OperationProgress{
+			Type:      "subscription_update",
+			Status:    "running",
+			Total:     result.Total,
+			Completed: i + 1,
+			Success:   result.Success,
+			Failed:    result.Failed,
+			NodeID:    id,
+			Message:   "订阅更新成功",
+		}, false)
 	}
+	finalStatus := "success"
+	if result.Failed > 0 && result.Success == 0 {
+		finalStatus = "failed"
+	}
+	bus.Publish(OperationProgress{
+		Type:      "subscription_update",
+		Status:    finalStatus,
+		Total:     result.Total,
+		Completed: result.Total,
+		Success:   result.Success,
+		Failed:    result.Failed,
+		Message:   "订阅批量更新完成",
+	}, true)
 	return result, nil
 }
 
@@ -123,65 +185,38 @@ func (s *SubscriptionService) UpdateNodes(ctx context.Context, id uint) error {
 		s.logger.Error("获取订阅失败", map[string]any{"id": id, "error": err.Error()})
 		return err
 	}
-	var op *OperationLog
-	if s.logSvc != nil {
-		var opErr error
-		op, opErr = s.logSvc.StartOperation(constants.TagSubscription, "开始更新订阅", map[string]any{"id": id, "name": sub.Name})
-		if opErr != nil {
-			s.logger.Error("启动操作日志失败", map[string]any{"id": id, "name": sub.Name, "error": opErr.Error()})
-		}
-	}
 
 	body, err := s.fetchContent(ctx, sub.URL, id)
 	if err != nil {
-		return s.failUpdate(id, op, "订阅更新失败", err)
-	}
-	if op != nil {
-		_ = op.Update("订阅内容拉取成功", map[string]any{"id": id, "name": sub.Name, "bytes": len(body)})
+		return s.failUpdate(id, "订阅更新失败", err)
 	}
 
 	contentHash := s.calculateHash(body)
 	unchanged, err := s.contentUnchanged(sub, contentHash, id)
 	if err != nil {
-		return s.failUpdate(id, op, "检查订阅内容变更失败", err)
+		return s.failUpdate(id, "检查订阅内容变更失败", err)
 	}
 	if unchanged {
 		now := time.Now()
 		s.updateSyncStatus(id, "success", &now)
-		if op != nil {
-			_ = op.Success("订阅更新完成", map[string]any{"id": id, "name": sub.Name, "unchanged": true})
-		}
 		return nil
 	}
 
 	parsed, err := s.parseWithStats(string(body))
 	if err != nil {
-		return s.failUpdate(id, op, "解析订阅失败", err)
-	}
-	if op != nil {
-		_ = op.Update("订阅解析完成", map[string]any{"id": id, "name": sub.Name, "total": parsed.Total})
+		return s.failUpdate(id, "解析订阅失败", err)
 	}
 
 	newNodes, err := s.filterNewNodes(parsed.Nodes, id)
 	if err != nil {
-		return s.failUpdate(id, op, "读取现有节点失败", err)
+		return s.failUpdate(id, "读取现有节点失败", err)
 	}
 	if err := s.repo.SaveNodesAndContentHash(newNodes, id, contentHash); err != nil {
-		return s.failUpdate(id, op, "写入节点失败", err)
+		return s.failUpdate(id, "写入节点失败", err)
 	}
 
-	duplicates := parsed.Total - len(newNodes)
 	now := time.Now()
 	s.updateSyncStatus(id, "success", &now)
-	if op != nil {
-		_ = op.Success("订阅更新完成", map[string]any{
-			"id":         id,
-			"name":       sub.Name,
-			"total":      parsed.Total,
-			"duplicates": duplicates,
-			"added":      len(newNodes),
-		})
-	}
 	return nil
 }
 

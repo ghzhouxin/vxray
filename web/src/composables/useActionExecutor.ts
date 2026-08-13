@@ -1,25 +1,19 @@
 import { type Ref } from 'vue'
 import { handleError, msg } from '@/utils/message'
 import { withLoading } from '@/utils/async'
-import type { RefreshContext } from '@/types'
 
 interface ActionOptions {
   refreshAfterAction: () => Promise<void>
   loading?: Ref<boolean>
-  showLogsBefore?: boolean
-  skipLogsRefresh?: boolean
   successMsg?: string | (() => string)
   errorMsg?: string
 }
 
-export function useActionExecutor(ctx: RefreshContext) {
-  const { refreshLogsSilently, showLogs } = ctx
-
+export function useActionExecutor() {
   async function execute(
     action: () => Promise<unknown>,
     options: ActionOptions
   ): Promise<boolean> {
-    if (options.showLogsBefore) showLogs()
     const run = async () => {
       try {
         await action()
@@ -30,8 +24,6 @@ export function useActionExecutor(ctx: RefreshContext) {
       } catch (e) {
         handleError(e, options.errorMsg || '操作失败')
         return false
-      } finally {
-        if (!options.skipLogsRefresh) await refreshLogsSilently()
       }
     }
     return options.loading ? withLoading(options.loading, run) : run()

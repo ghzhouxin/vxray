@@ -38,7 +38,10 @@ function parseSSE<T>(reader: ReadableStreamDefaultReader<Uint8Array>, onProgress
 async function createSSEStream(url: string, body: unknown): Promise<ReadableStreamDefaultReader<Uint8Array>> {
   const response = await fetch(`${API_BASE_URL}${url}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream'
+    },
     body: JSON.stringify(body)
   })
   if (!response.ok) {

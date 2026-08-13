@@ -8,7 +8,7 @@ import (
 )
 
 // defaultTunInbound 返回默认的 TUN inbound 配置。
-// name: 固定 utun100，避免与系统 utun0-N 冲突（xray-core 要求 utunN 格式，N∈[10,1024]）。
+// name: 固定 utun111，避免与系统 utun0-N 冲突（xray-core 要求 utunN 格式，N∈[10,1024]）。
 // autoSystemRoutingTable: 接管全部 IPv4/IPv6 流量，xray-core 用 protected routes 实现，不会路由环路。
 // mtu/gateway/dns 省略：使用 xray-core 默认值 (1500 / 169.254.10.1/30 / 无)。
 // 需要 xray-core 26.7.28+（支持 autoSystemRoutingTable）。
@@ -17,7 +17,7 @@ func defaultTunInbound() map[string]any {
 		"tag":      "tun-in",
 		"protocol": "tun",
 		"settings": map[string]any{
-			"name":                   "utun100",
+			"name":                   "utun111",
 			"autoSystemRoutingTable": []string{"0.0.0.0/0", "::/0"},
 		},
 		"sniffing": map[string]any{
@@ -66,6 +66,15 @@ func InjectTunInbound(srcConfigPath, dstConfigPath string) error {
 		newInbounds = append(newInbounds, tunInbound)
 	}
 	cfg["inbounds"] = newInbounds
+
+	// TUN 接管全系统流量，info 级每连接数行、日均百 MB 级日志；降到 warning。
+	// 入库侧（container）也只取 warn/error，双层防护。
+	logCfg, _ := cfg["log"].(map[string]any)
+	if logCfg == nil {
+		logCfg = map[string]any{}
+	}
+	logCfg["loglevel"] = "warning"
+	cfg["log"] = logCfg
 
 	if err := os.MkdirAll(filepath.Dir(dstConfigPath), 0o755); err != nil {
 		return fmt.Errorf("create dst dir: %w", err)

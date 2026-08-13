@@ -41,9 +41,7 @@
       </div>
     </div>
     <div v-if="!collapsed" class="log-body" ref="logBodyRef">
-      <div v-if="hasMore && loading" class="log-load-hint">加载历史中...</div>
-      <div v-if="hasMore" ref="loadMoreSentinel" class="log-load-sentinel"></div>
-      <div v-if="loading" class="log-state">加载中...</div>
+      <div v-if="loading && !logs.length" class="log-state">加载中...</div>
       <div v-else-if="!logs.length" class="log-state">暂无日志</div>
       <template v-else>
         <div v-for="log in logs" :key="log.id" class="log-line">
@@ -53,6 +51,9 @@
           <span class="log-message" :title="log.detail">{{ log.message }}</span>
         </div>
       </template>
+      <!-- 列表 DESC（最新在上），历史在下方：哨兵放底部，滚动到底加载更多 -->
+      <div v-if="hasMore" ref="loadMoreSentinel" class="log-load-sentinel"></div>
+      <div v-if="hasMore && loading" class="log-load-hint">加载历史中...</div>
     </div>
   </footer>
 </template>
@@ -107,6 +108,16 @@ function setupObserver() {
 watch([loadMoreSentinel, () => props.collapsed], () => nextTick(setupObserver))
 onMounted(() => nextTick(setupObserver))
 onBeforeUnmount(() => observer?.disconnect())
+
+// 列表内容增长时保持视口锚定：自动刷新在顶部插入新日志 / 底部追加历史时，
+// 视口当前内容不应跳动（scrollTop=0 时无需处理，保持看最新）
+watch(() => props.logs.length, async () => {
+  const el = logBodyRef.value
+  if (!el || el.scrollTop === 0) return
+  const prevHeight = el.scrollHeight
+  await nextTick()
+  el.scrollTop += el.scrollHeight - prevHeight
+})
 
 const levelOptions = computed(() => [
   { label: ALL_OPTION_LABEL, value: ALL_OPTION_VALUE },

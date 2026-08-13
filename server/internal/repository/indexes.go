@@ -25,7 +25,6 @@ func PrepareNodeIndexes(db *gorm.DB) error {
 func PrepareLogIndexes(db *gorm.DB) error {
 	indexes := []string{
 		`CREATE INDEX IF NOT EXISTS idx_logs_updated_id ON logs(updated_at DESC, id DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_logs_operation_id ON logs(operation_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_logs_tag_level_updated ON logs(tag, level, updated_at DESC)`,
 	}
 	for _, stmt := range indexes {

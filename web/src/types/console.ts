@@ -5,8 +5,6 @@ import type { TunStatusState } from './tun'
 
 export interface RefreshContext {
   refreshConsoleAndNodes: () => Promise<void>
-  refreshLogsSilently: () => Promise<void>
-  showLogs: () => void
 }
 
 export interface ConsoleSnapshot {

@@ -18,11 +18,9 @@ import (
 
 type geoConfig struct{ cfg *config.State }
 
-func (c geoConfig) GeoIPPath() string { return c.cfg.SystemMeta().Paths.GeoIP }
-func (c geoConfig) GeoSitePath() string {
-	return c.cfg.SystemMeta().Paths.GeoSite
-}
-func (c geoConfig) GeoDir() string { return c.cfg.SystemMeta().Paths.GeoDir }
+func (c geoConfig) GeoIPPath() string  { return c.cfg.SystemMeta().Paths.GeoIP }
+func (c geoConfig) GeoSitePath() string { return c.cfg.SystemMeta().Paths.GeoSite }
+func (c geoConfig) GeoDir() string     { return c.cfg.SystemMeta().Paths.GeoDir }
 func (c geoConfig) GeoUpdateURL() (string, string, bool) {
 	return c.cfg.GeoUpdateURL()
 }
@@ -50,17 +48,44 @@ func Init(db *gorm.DB, cfg *config.State) (*Container, error) {
 
 	nodeRepo := repository.NewNodeRepository(db)
 
-	logSvc := NewLogService(db)
-	subSvc := NewSubscriptionService(db, logSvc, nodeRepo)
-	xraySvc := NewXrayService(nodeRepo, cfg, logSvc)
 	paths := cfg.SystemMeta().Paths
-	rootXray := xray.NewRootXray(
-		xrayRuntimeConfig{cfg: cfg},
-		paths.TunPidPath,
-		paths.TunLogPath,
-	)
-	tunSvc := NewTunService(xraySvc.GetManager(), rootXray, cfg, logSvc)
-	xraySvc.SetTunHandlers(tunSvc.IsEnabled, tunSvc.Disable, tunSvc.RestartRootXray)
+	meta := cfg.SystemMeta().Xray
+	logSvc := NewLogService(db, paths.XrayLogPath, paths.TunLogPath)
+	subSvc := NewSubscriptionService(db, logSvc, nodeRepo)
+
+	// user / root 双实例：同一 Manager 类型、不同配置身份
+	userMgr := xray.NewManager(xray.Options{
+		Binary:   meta.Binary,
+		AssetDir: paths.GeoDir,
+		LogFile:  paths.XrayLogPath,
+		PidFile:  paths.XrayPidPath,
+		OnLog: func(level, line string) {
+			if level == constants.LevelWarn || level == constants.LevelError {
+				_ = logSvc.LogLevel(constants.TagXray, level, line, nil)
+			}
+		},
+	})
+	rootMgr := xray.NewManager(xray.Options{
+		Binary:   meta.Binary,
+		AssetDir: paths.GeoDir,
+		AsRoot:   true,
+		LogFile:  paths.TunLogPath,
+		PidFile:  paths.TunPidPath,
+		OnLog: func(level, line string) {
+			if level == constants.LevelWarn || level == constants.LevelError {
+				_ = logSvc.LogLevel(constants.TagTun, level, line, nil)
+			}
+		},
+	})
+	// 清理上次会话残留的孤儿 xray 进程（vxray 异常退出时无人回收）
+	userMgr.CleanupStale()
+	rootMgr.CleanupStale()
+
+	xraySvc := NewXrayService(nodeRepo, cfg, logSvc, userMgr)
+	tunSvc := NewTunService(rootMgr, userMgr, cfg, logSvc)
+	xraySvc.SetTunHandlers(tunSvc.IsEnabled, tunSvc.Disable, tunSvc.RestartRootProcess)
+	userMgr.SetCrashCallback(xraySvc.handleCrash)
+	rootMgr.SetCrashCallback(tunSvc.handleRootCrash)
 	nodeSvc := NewNodeService(xraySvc, nodeRepo, cfg, logSvc)
 	proxyMgr := proxy.NewManager(proxy.Options{
 		HTTPPort:  constants.ProxyHTTPPort,
@@ -68,22 +93,9 @@ func Init(db *gorm.DB, cfg *config.State) (*Container, error) {
 	})
 	geoMgr := geo.NewManager(geoConfig{cfg: cfg})
 
-	xraySvc.GetManager().SetLogCallback(func(level, message string) {
-		_ = logSvc.LogLevel(constants.TagXray, level, message, nil)
-	})
-	xraySvc.GetManager().SetCrashCallback(xraySvc.OnCrash)
-	rootXray.SetLogCallback(func(level, message string) {
-		_ = logSvc.LogLevel(constants.TagTun, level, message, nil)
-	})
-
-	// 清理上次残留的 root xray 进程
-	tunSvc.CleanupStale()
-
-	// 迁移空 Transport 节点：补齐重构前持久化的节点，避免 Xray 构建无效 outbound
 	if err := nodeSvc.MigrateEmptyTransportNodes(); err != nil {
 		_ = logSvc.Error(constants.TagSubscription, "Transport 迁移失败", map[string]any{"error": err.Error()})
 	}
-	// 迁移后重建活跃节点 outbound，修复 stale config 文件
 	if err := nodeSvc.RestoreActiveOutbound(); err != nil {
 		_ = logSvc.Error(constants.TagXray, "重建活跃节点 outbound 失败", map[string]any{"error": err.Error()})
 	}
@@ -101,12 +113,13 @@ func Init(db *gorm.DB, cfg *config.State) (*Container, error) {
 		cancel:       cancel,
 	}
 
-	// 默认启动 xray（无节点时用 freedom outbound，有活跃节点则自动连接）
 	go func() {
 		if err := xraySvc.Start(); err != nil {
 			_ = logSvc.Error(constants.TagXray, "vxray 启动时自动启动 xray 失败", map[string]any{"error": err.Error()})
 		}
 	}()
+
+	_ = logSvc.Info(constants.TagApp, "vxray 已启动", map[string]any{"home": cfg.SystemMeta().Home})
 
 	return c, nil
 }
@@ -148,7 +161,6 @@ func (c *Container) Close() error {
 		c.cancel()
 	}
 
-	// TUN 模式优先关闭：非交互式 kill root xray，不弹窗，不重启用户态 xray
 	if c.Tun != nil {
 		c.Tun.Shutdown()
 	}

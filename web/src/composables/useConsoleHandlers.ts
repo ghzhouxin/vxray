@@ -14,7 +14,7 @@ interface ConsoleActionContext {
 }
 
 export function useConsoleHandlers(ctx: ConsoleActionContext) {
-  const { execute } = useActionExecutor(ctx.refreshContext)
+  const { execute } = useActionExecutor()
   const { refreshConsoleAndNodes } = ctx.refreshContext
   const { refreshConsole, openModal } = ctx
   const xrayStore = useXrayStore()
@@ -29,7 +29,7 @@ export function useConsoleHandlers(ctx: ConsoleActionContext) {
     const stopping = xrayStore.isRunning
     await execute(
       async () => { if (stopping) await xrayStore.stopXray(); else await xrayStore.startXray() },
-      { refreshAfterAction: refreshConsoleAndNodes, showLogsBefore: true, errorMsg: stopping ? '停止失败' : '启动失败' }
+      { refreshAfterAction: refreshConsoleAndNodes, errorMsg: stopping ? '停止失败' : '启动失败' }
     )
   }
 
@@ -42,7 +42,7 @@ export function useConsoleHandlers(ctx: ConsoleActionContext) {
         : nodeStore.nodes.find(n => n.latency > 0)
       if (!candidate) { msg.warning(NO_AVAILABLE_NODE); return }
       await execute(() => nodeStore.activateNode(candidate.id), {
-        refreshAfterAction: refreshConsoleAndNodes, showLogsBefore: true,
+        refreshAfterAction: refreshConsoleAndNodes,
         errorMsg: '激活节点失败'
       })
       await waitForProxyReady()
@@ -53,7 +53,7 @@ export function useConsoleHandlers(ctx: ConsoleActionContext) {
         await settingsStore.fetchConfigView()
       },
       {
-        refreshAfterAction: refreshConsole, showLogsBefore: true,
+        refreshAfterAction: refreshConsole,
         successMsg: '网站测速完成', errorMsg: SPEED_TEST_FAILED
       }
     )
@@ -63,7 +63,6 @@ export function useConsoleHandlers(ctx: ConsoleActionContext) {
     const willEnable = !proxyStore.systemProxyEnabled
     await execute(() => proxyStore.toggleProxy(), {
       refreshAfterAction: refreshConsoleAndNodes,
-      showLogsBefore: true,
       successMsg: willEnable ? '系统代理已开启' : '系统代理已关闭',
       errorMsg: '切换系统代理失败'
     })
@@ -75,7 +74,6 @@ export function useConsoleHandlers(ctx: ConsoleActionContext) {
       async () => { if (willEnable) await tunStore.enable(); else await tunStore.disable() },
       {
         refreshAfterAction: refreshConsoleAndNodes,
-        showLogsBefore: true,
         successMsg: willEnable ? 'TUN 模式已开启' : 'TUN 模式已关闭',
         errorMsg: '切换 TUN 模式失败'
       }
@@ -98,7 +96,6 @@ export function useConsoleHandlers(ctx: ConsoleActionContext) {
   async function handleSaveUserSettings() {
     await execute(() => settingsStore.saveUserSettings(), {
       refreshAfterAction: refreshConsole,
-      skipLogsRefresh: true,
       successMsg: '设置已保存',
       errorMsg: '保存失败'
     })
@@ -106,7 +103,6 @@ export function useConsoleHandlers(ctx: ConsoleActionContext) {
   async function handleSaveXrayConfig() {
     await execute(() => xrayConfigStore.saveXrayConfig(), {
       refreshAfterAction: refreshConsole,
-      showLogsBefore: true,
       successMsg: '配置已保存',
       errorMsg: '保存失败'
     })
@@ -125,7 +121,7 @@ export function useConsoleHandlers(ctx: ConsoleActionContext) {
     }
     await execute(
       async () => { await xrayStore.stopXray(); await xrayStore.startXray() },
-      { refreshAfterAction: refreshConsoleAndNodes, showLogsBefore: true, successMsg: 'Xray 已重启', errorMsg: '重启失败' }
+      { refreshAfterAction: refreshConsoleAndNodes, successMsg: 'Xray 已重启', errorMsg: '重启失败' }
     )
   }
 

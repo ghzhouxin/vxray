@@ -1,6 +1,11 @@
 package api
 
 import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"v2ray-server/internal/dto"
 	"v2ray-server/internal/model"
@@ -67,9 +72,60 @@ func (h *SubscriptionHandler) RefreshNodes(c *gin.Context) {
 	if !bindJSON(c, &req) {
 		return
 	}
+	if strings.Contains(c.GetHeader("Accept"), "text/event-stream") {
+		h.streamBatchRefresh(c, req.IDs)
+		return
+	}
 	result, err := h.services.Subscription.UpdateNodesBatch(c.Request.Context(), req.IDs)
 	if handleError(c, err) {
 		return
 	}
 	response.Success(c, result)
+}
+
+func (h *SubscriptionHandler) streamBatchRefresh(c *gin.Context, ids []uint) {
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.WriteHeader(http.StatusOK)
+	c.Writer.Flush()
+
+	ctx := c.Request.Context()
+	progressChan, unsubscribe := h.services.Subscription.SubscribeBatchProgress()
+	defer unsubscribe()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = h.services.Subscription.UpdateNodesBatch(ctx, ids)
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			return
+		case progress, ok := <-progressChan:
+			if !ok {
+				return
+			}
+			if err := writeSSE(c, progress); err != nil {
+				return
+			}
+		}
+	}
+}
+
+func writeSSE(c *gin.Context, value any) error {
+	data, err := json.Marshal(value)
+	if err != nil {
+		_, _ = c.Writer.WriteString("\n")
+		return err
+	}
+	if _, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data); err != nil {
+		return err
+	}
+	c.Writer.Flush()
+	return nil
 }

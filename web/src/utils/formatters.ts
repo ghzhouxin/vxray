@@ -20,7 +20,7 @@ export const formatTime = (time?: string) =>
 export const formatDateTime = (time?: string) => formatWithOptions(time)
 
 export const formatClock = (time?: string) =>
-  formatWithOptions(time, { hour: '2-digit', minute: '2-digit' })
+  formatWithOptions(time, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
 export function formatTransportDetail(node: { transport?: Transport }): string {
   const transport = node.transport
