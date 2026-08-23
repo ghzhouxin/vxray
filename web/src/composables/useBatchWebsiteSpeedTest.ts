@@ -1,9 +1,9 @@
 import { computed, ref } from 'vue'
+import { nodeApi } from '@/api'
 import { useNodeStore, useSettingsStore, useXrayStore } from '@/stores'
 import { handleError, msg } from '@/utils/message'
-import { waitForProxyReady } from '@/utils/async'
-import { NO_AVAILABLE_NODE } from '@/constants'
-import type { RefreshContext } from '@/types'
+import { NO_AVAILABLE_NODE, NODE_PAGE_SIZE } from '@/constants'
+import type { Node, RefreshContext } from '@/types'
 
 // useBatchWebsiteSpeedTest 实现前端轮流网站测速：按延迟升序遍历可用节点，逐个切换并触发网站测速，
 // 网站通过数达到 floor(total*3/4)（至少1）即停止；未找到则恢复测速前节点。整个过程在前端循环，无后端 job。
@@ -16,6 +16,7 @@ export function useBatchWebsiteSpeedTest(ctx: RefreshContext) {
   const batchLoading = ref(false)
   const batchCurrent = ref(0)
   const batchTotal = ref(0)
+  const batchCancel = ref(false)
 
   const batchProgress = computed(() => {
     if (!batchLoading.value) return ''
@@ -26,12 +27,18 @@ export function useBatchWebsiteSpeedTest(ctx: RefreshContext) {
     return settingsStore.settings.speedtest.website_targets.filter(t => t.latency > 0).length
   }
 
+  // 候选取第一页可用节点即可：后端已按延迟升序返回，靠前的就是最优候选
+  async function collectCandidates(): Promise<Node[]> {
+    const resp = await nodeApi.getNodes({ latencyStatuses: ['available'], limit: NODE_PAGE_SIZE })
+    return resp.items
+  }
+
   async function runBatch() {
     if (batchLoading.value) return
-    const candidates = nodeStore.nodes
-      .filter(n => n.latency > 0)
-      .slice()
-      .sort((a, b) => (a.latency ?? 0) - (b.latency ?? 0))
+    const candidates = await collectCandidates().catch(e => {
+      handleError(e, '获取可用节点失败')
+      return []
+    })
     if (!candidates.length) { msg.warning(NO_AVAILABLE_NODE); return }
 
     const total = settingsStore.settings.speedtest.website_targets.length
@@ -39,16 +46,17 @@ export function useBatchWebsiteSpeedTest(ctx: RefreshContext) {
     const originalNodeId = xrayStore.currentNode?.id
 
     batchLoading.value = true
+    batchCancel.value = false
     batchTotal.value = candidates.length
     batchCurrent.value = 0
 
     let foundOk = 0
     try {
       for (let i = 0; i < candidates.length; i++) {
+        if (batchCancel.value) break
         batchCurrent.value = i + 1
         try {
           await nodeStore.activateNode(candidates[i].id)
-          await waitForProxyReady()
           await xrayStore.runWebsiteSpeedTest()
           await settingsStore.fetchConfigView()
           const ok = countOk()
@@ -64,6 +72,12 @@ export function useBatchWebsiteSpeedTest(ctx: RefreshContext) {
       }
       if (foundOk > 0) {
         msg.success(`找到优秀节点（${foundOk}/${total} 网站可用）`)
+      } else if (batchCancel.value) {
+        if (originalNodeId) {
+          await nodeStore.activateNode(originalNodeId).catch(e => console.warn(e))
+          await refreshConsoleAndNodes().catch(e => console.warn(e))
+        }
+        msg.warning('轮流测速已取消，已恢复原节点')
       } else {
         // 未找到优秀节点，恢复测速前的节点
         if (originalNodeId) {
@@ -79,5 +93,9 @@ export function useBatchWebsiteSpeedTest(ctx: RefreshContext) {
     }
   }
 
-  return { batchLoading, batchProgress, runBatch }
+  function cancelBatch() {
+    if (batchLoading.value) batchCancel.value = true
+  }
+
+  return { batchLoading, batchProgress, batchCancel, runBatch, cancelBatch }
 }

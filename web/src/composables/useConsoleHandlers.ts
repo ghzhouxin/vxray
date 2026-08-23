@@ -1,7 +1,6 @@
 import { useGeoStore, useNodeStore, useProxyStore, useSettingsStore, useTunStore, useXrayConfigStore, useXrayStore } from '@/stores'
 import { useActionExecutor } from './useActionExecutor'
 import { handleError, msg } from '@/utils/message'
-import { waitForProxyReady } from '@/utils/async'
 import { NO_AVAILABLE_NODE, SPEED_TEST_FAILED } from '@/constants'
 import { ElMessageBox } from 'element-plus'
 import type { RefreshContext } from '@/types'
@@ -45,7 +44,6 @@ export function useConsoleHandlers(ctx: ConsoleActionContext) {
         refreshAfterAction: refreshConsoleAndNodes,
         errorMsg: '激活节点失败'
       })
-      await waitForProxyReady()
     }
     await execute(
       async () => {

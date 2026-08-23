@@ -1,6 +1,5 @@
 export const API_BASE_URL = '/api'
 export const NODE_PAGE_SIZE = 120
-export const PROXY_READY_DELAY = 1000
 export const REQUEST_TIMEOUT = 300000
 export const STATUS_REFRESH_INTERVAL = 5000
 
@@ -22,7 +21,6 @@ export const NODE_LOAD_MORE_THRESHOLD = 260
 export const NODE_VIEWPORT_HEIGHT_DEFAULT = 520
 
 export const TOOLTIP_SHOW_AFTER_MS = 2000
-export const CODEMIRROR_PARSE_TIMEOUT_MS = 1000
 
 export const SPEEDTEST_TIMEOUT_MIN = 1000
 export const SPEEDTEST_TIMEOUT_MAX = 30000

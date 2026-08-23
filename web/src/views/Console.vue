@@ -47,6 +47,7 @@
         @toggle-logs="toggleLogs"
         @speed-test="handleSpeedTest"
         @batch-website-speed-test="handleBatchWebsiteSpeedTest"
+        @cancel-batch-website-speed-test="handleCancelBatchWebsiteSpeedTest"
         @open-speedtest-targets="openModal('speedTestTargets')"
         @open-subscriptions="openModal('subscriptions')"
         @open-xray-config="openXrayConfigModal"
@@ -214,7 +215,10 @@ const activeTaskStatus = computed(() => {
   return speedTestTaskStatus.value
 })
 
-const { batchLoading: batchWebsiteSpeedTestLoading, batchProgress: batchWebsiteSpeedTestProgress, runBatch: handleBatchWebsiteSpeedTest } = useBatchWebsiteSpeedTest(refreshContext)
+const {
+  batchLoading: batchWebsiteSpeedTestLoading, batchProgress: batchWebsiteSpeedTestProgress,
+  runBatch: handleBatchWebsiteSpeedTest, cancelBatch: handleCancelBatchWebsiteSpeedTest
+} = useBatchWebsiteSpeedTest(refreshContext)
 
 const {
   updatingSubscriptionId, batchUpdating, submitLoading,
@@ -259,7 +263,10 @@ const onKey = (fn: () => void, disabled?: () => boolean) => (e: KeyboardEvent) =
 
 onKeyStroke(matchKey('KeyG'), onKey(toggleLogs))
 onKeyStroke(matchKey('KeyT'), onKey(handleRetestTimeout, () => operationStore.running))
-onKeyStroke(matchKey('KeyR'), onKey(handleBatchWebsiteSpeedTest, () => xrayStore.websiteSpeedTestLoading || autoSpeedTestPending.value || batchWebsiteSpeedTestLoading.value))
+onKeyStroke(matchKey('KeyR'), onKey(
+  () => batchWebsiteSpeedTestLoading.value ? handleCancelBatchWebsiteSpeedTest() : handleBatchWebsiteSpeedTest(),
+  () => xrayStore.websiteSpeedTestLoading || autoSpeedTestPending.value
+))
 onKeyStroke(matchKey('KeyV'), onKey(handleSpeedTestAvailable, () => operationStore.running))
 onKeyStroke(matchKey('KeyD'), onKey(handleDeleteFailed, () => deletingFailedNodes.value || operationStore.running))
 onKeyStroke(matchKey('KeyS'), onKey(handleUpdateAllSubscriptions, () => batchUpdating.value || operationStore.running))

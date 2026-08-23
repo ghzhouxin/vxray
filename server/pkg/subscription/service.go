@@ -22,14 +22,15 @@ func protocolPrefix(url string) string {
 }
 
 // ParseNodesWithDedup 并发解析节点 URL，按 IdentityKey 去重。
-func ParseNodesWithDedup(urls []string) *types.ParseResult {
+// 返回 (去重后的节点, 解析失败数)。
+func ParseNodesWithDedup(urls []string) ([]*types.ParsedNode, int) {
 	type slot struct {
 		node *types.ParsedNode
 		ok   bool
 	}
 	results := make([]slot, len(urls))
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, maxParseConcurrency) // limit concurrency to avoid exhausting resources
+	sem := make(chan struct{}, maxParseConcurrency)
 
 	for i, u := range urls {
 		wg.Add(1)
@@ -53,10 +54,12 @@ func ParseNodesWithDedup(urls []string) *types.ParseResult {
 
 	wg.Wait()
 
+	failed := 0
 	nodesMap := make(map[string]*types.ParsedNode)
 	nodes := make([]*types.ParsedNode, 0, len(urls))
 	for _, s := range results {
 		if !s.ok {
+			failed++
 			continue
 		}
 		key := s.node.IdentityKey()
@@ -65,9 +68,5 @@ func ParseNodesWithDedup(urls []string) *types.ParseResult {
 			nodes = append(nodes, s.node)
 		}
 	}
-
-	return &types.ParseResult{
-		Nodes: nodes,
-		Total: len(urls),
-	}
+	return nodes, failed
 }

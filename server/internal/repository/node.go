@@ -7,7 +7,6 @@ import (
 
 	"v2ray-server/internal/constants"
 	"v2ray-server/internal/model"
-	"v2ray-server/pkg/types"
 	"v2ray-server/pkg/utils"
 
 	"gorm.io/gorm"
@@ -58,9 +57,10 @@ func (r *NodeRepository) FindByFilter(filter model.NodeFilter) ([]*model.Node, s
 	return nodes, nextCursor, nil
 }
 
-func (r *NodeRepository) FindIDsByFilter(filter model.NodeFilter) ([]uint, error) {
-	var ids []uint
-	return ids, r.buildFilteredQuery(filter).Pluck("id", &ids).Error
+// FindByFilterAll 按筛选条件返回全部节点（无分页、无置顶），测速用。
+func (r *NodeRepository) FindByFilterAll(filter model.NodeFilter) ([]*model.Node, error) {
+	var nodes []*model.Node
+	return nodes, r.buildFilteredQuery(filter).Find(&nodes).Error
 }
 
 func (r *NodeRepository) FindByIDs(ids []uint) ([]*model.Node, error) {
@@ -72,21 +72,6 @@ func (r *NodeRepository) FindTopNodes(limit int) ([]*model.Node, error) {
 	var nodes []*model.Node
 	query := r.db.Where("latency >= ?", constants.LatencyMinValid).Order("latency ASC").Limit(limit)
 	return nodes, query.Find(&nodes).Error
-}
-
-// FindByEmptyTransport returns nodes whose Transport is empty (NULL or zero value).
-// Used to migrate nodes persisted before the Transport refactor.
-func (r *NodeRepository) FindByEmptyTransport() ([]*model.Node, error) {
-	var nodes []*model.Node
-	err := r.db.Where(
-		"transport IS NULL OR transport = '' OR json_extract(transport, '$.Network') IS NULL OR json_extract(transport, '$.Network') = ''",
-	).Find(&nodes).Error
-	return nodes, err
-}
-
-// UpdateTransport updates only the Transport field of a node.
-func (r *NodeRepository) UpdateTransport(id uint, transport types.Transport) error {
-	return r.db.Model(&model.Node{}).Where("id = ?", id).Update("transport", transport).Error
 }
 
 func (r *NodeRepository) FindExistingIdentityKeys(nodes []*model.Node) (map[string]struct{}, error) {
@@ -148,40 +133,31 @@ func (r *NodeRepository) CountByLatencyStatus() (*NodeSummaryCounts, error) {
 	return &counts, err
 }
 
-func (r *NodeRepository) SaveBatch(nodes []*model.Node) error {
-	for i := 0; i < len(nodes); i += constants.NodeBatchSize {
-		end := i + constants.NodeBatchSize
-		if end > len(nodes) {
-			end = len(nodes)
-		}
-		for _, node := range nodes[i:end] {
-			node.LatencyRank = latencyRank(node.Latency)
-		}
-		if err := r.db.Create(nodes[i:end]).Error; err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 type LatencyUpdate struct {
 	ID      uint
 	Latency int64
 }
 
+// BatchUpdateLatency 用单条 CASE WHEN 批量更新，避免 N 条单行 UPDATE。
 func (r *NodeRepository) BatchUpdateLatency(updates []LatencyUpdate) error {
 	if len(updates) == 0 {
 		return nil
 	}
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		for _, u := range updates {
-			if err := tx.Model(&model.Node{}).Where("id = ?", u.ID).
-				Updates(map[string]any{"latency": u.Latency, "latency_rank": latencyRank(u.Latency)}).Error; err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+
+	latencyCases := strings.Builder{}
+	rankCases := strings.Builder{}
+	ids := make([]uint, 0, len(updates))
+	for _, u := range updates {
+		latencyCases.WriteString(fmt.Sprintf("WHEN %d THEN %d ", u.ID, u.Latency))
+		rankCases.WriteString(fmt.Sprintf("WHEN %d THEN %d ", u.ID, latencyRank(u.Latency)))
+		ids = append(ids, u.ID)
+	}
+
+	sql := fmt.Sprintf(
+		"UPDATE nodes SET latency = CASE id %sEND, latency_rank = CASE id %sEND WHERE id IN ?",
+		latencyCases.String(), rankCases.String(),
+	)
+	return r.db.Exec(sql, ids).Error
 }
 
 func (r *NodeRepository) Delete(id uint) error { return r.db.Delete(&model.Node{}, id).Error }

@@ -115,7 +115,6 @@ func (s *TunService) Disable() error {
 
 	// root.Stop() 成功后等 socks 端口释放再启动 user xray：
 	// 端口还可能被垂死的 root xray 短暂持有，此时 bind 会失败
-	paths = s.cfg.SystemMeta().Paths
 	ports, _ := s.cfg.XrayPorts()
 	if ports != nil && !xray.WaitPortClosed(ports.SOCKSPort, 3*time.Second) {
 		s.logger.Info("socks 端口未及时释放，继续启动用户态 xray", nil)

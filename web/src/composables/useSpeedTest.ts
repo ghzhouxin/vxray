@@ -3,7 +3,6 @@ import { useNodeStore, useOperationStore, useSettingsStore, useXrayStore } from 
 import { NODE_REFRESH_INTERVAL, SPEED_TEST_STATUS_POLL_INTERVAL, SPEED_TEST_FAILED } from '@/constants'
 import { handleError, msg } from '@/utils/message'
 import { SSERequestError } from '@/utils/sse'
-import { waitForProxyReady } from '@/utils/async'
 import { useAutoRefresh } from './useAutoRefresh'
 import { useActionExecutor } from './useActionExecutor'
 import type { NodeFilterBase, NodeLatencyStatus, NodeSpeedTestStatus, Node, RefreshContext } from '@/types'
@@ -75,8 +74,8 @@ export function useSpeedTest(ctx: RefreshContext) {
   async function runNodeSpeedTest(payload: { ids?: number[]; filter?: NodeFilterBase }, successMessage?: string) {
     if (operationStore.running) { msg.warning('当前有测速任务执行中'); return }
     stopStatusPolling()
+    // 测速期间停掉节点列表全量刷新，延迟由 SSE 事件原地更新，避免整表覆盖竞态
     stopNodeRefresh()
-    startNodeRefresh()
     operationStore.start('node_speedtest')
     let keepRestoredJob = false
     try {
@@ -120,7 +119,6 @@ export function useSpeedTest(ctx: RefreshContext) {
     await execute(
       async () => {
         if (!xrayStore.websiteSpeedTestLoading) {
-          await waitForProxyReady()
           await xrayStore.runWebsiteSpeedTest()
           await settingsStore.fetchConfigView()
         }

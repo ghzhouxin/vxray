@@ -91,7 +91,8 @@ func (h *SubscriptionHandler) streamBatchRefresh(c *gin.Context, ids []uint) {
 	c.Writer.Flush()
 
 	ctx := c.Request.Context()
-	progressChan, unsubscribe := h.services.Subscription.SubscribeBatchProgress()
+	bus := h.services.Subscription.PrepareBatchBus()
+	progressChan, unsubscribe := bus.Subscribe()
 	defer unsubscribe()
 
 	done := make(chan struct{})

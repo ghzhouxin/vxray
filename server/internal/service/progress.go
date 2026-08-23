@@ -18,7 +18,6 @@ type OperationProgress struct {
 	Latency   int64  `json:"latency,omitempty"`
 	Error     string `json:"error,omitempty"`
 	Message   string `json:"message,omitempty"`
-	Testing   bool   `json:"testing"`
 }
 
 // ProgressBus 是线程安全的进度发布订阅总线。

@@ -43,13 +43,12 @@ func NewSubscriptionService(db *gorm.DB, logSvc *LogService, nodeRepo *repositor
 	}
 }
 
-func (s *SubscriptionService) SubscribeBatchProgress() (<-chan OperationProgress, func()) {
-	if s.batchBus == nil {
-		ch := make(chan OperationProgress)
-		close(ch)
-		return ch, func() {}
-	}
-	return s.batchBus.Subscribe()
+// PrepareBatchBus 创建新的进度总线并设置到服务上，供 SSE handler 在启动批量更新前订阅。
+func (s *SubscriptionService) PrepareBatchBus() *ProgressBus {
+	bus := NewProgressBus()
+	bus.Start()
+	s.batchBus = bus
+	return bus
 }
 
 func (s *SubscriptionService) log(op string, id uint, name string, err error) {
@@ -60,10 +59,16 @@ func (s *SubscriptionService) log(op string, id uint, name string, err error) {
 	}
 }
 
-func (s *SubscriptionService) failUpdate(id uint, message string, err error) error {
+func (s *SubscriptionService) fail(id uint, stage string, err error, start time.Time) error {
 	s.updateSyncStatus(id, "failed", nil)
-	s.logger.Error(message, map[string]any{"id": id, "error": err.Error()})
+	s.logger.Error(stage+"失败", map[string]any{"id": id, "error": err.Error(), "total_ms": time.Since(start).Milliseconds()})
 	return err
+}
+
+func (s *SubscriptionService) markSuccess(id uint, name, msg string, start time.Time) {
+	now := time.Now()
+	s.updateSyncStatus(id, "success", &now)
+	s.logger.Info("订阅更新"+msg, map[string]any{"id": id, "name": name, "total_ms": time.Since(start).Milliseconds()})
 }
 
 func (s *SubscriptionService) List() ([]model.Subscription, error) {
@@ -113,56 +118,39 @@ func (s *SubscriptionService) UpdateNodesBatch(ctx context.Context, ids []uint) 
 	}
 
 	result := &BatchUpdateResult{Total: len(targetIDs)}
+	bus := s.batchBus
+	if bus == nil {
+		bus = NewProgressBus()
+		bus.Start()
+		s.batchBus = bus
+	}
 
-	bus := NewProgressBus()
-	bus.Start()
-	s.batchBus = bus
-
-	bus.Publish(OperationProgress{
-		Type:    "subscription_update",
-		Status:  "running",
-		Total:   result.Total,
-		Message: "开始更新订阅",
-	}, false)
-
-	for i, id := range targetIDs {
+	prog := func(completed int, id uint, msg, errMsg string) {
 		bus.Publish(OperationProgress{
 			Type:      "subscription_update",
 			Status:    "running",
 			Total:     result.Total,
-			Completed: i + 1,
+			Completed: completed,
 			Success:   result.Success,
 			Failed:    result.Failed,
 			NodeID:    id,
-			Message:   "正在更新订阅",
+			Message:   msg,
+			Error:     errMsg,
 		}, false)
+	}
+
+	prog(0, 0, "开始更新订阅", "")
+	for i, id := range targetIDs {
+		prog(i, id, "正在更新订阅", "")
 		if err := s.UpdateNodes(ctx, id); err != nil {
 			result.Failed++
-			bus.Publish(OperationProgress{
-				Type:      "subscription_update",
-				Status:    "running",
-				Total:     result.Total,
-				Completed: i + 1,
-				Success:   result.Success,
-				Failed:    result.Failed,
-				NodeID:    id,
-				Message:   "订阅更新失败",
-				Error:     err.Error(),
-			}, false)
+			prog(i+1, id, "订阅更新失败", err.Error())
 			continue
 		}
 		result.Success++
-		bus.Publish(OperationProgress{
-			Type:      "subscription_update",
-			Status:    "running",
-			Total:     result.Total,
-			Completed: i + 1,
-			Success:   result.Success,
-			Failed:    result.Failed,
-			NodeID:    id,
-			Message:   "订阅更新成功",
-		}, false)
+		prog(i+1, id, "订阅更新成功", "")
 	}
+
 	finalStatus := "success"
 	if result.Failed > 0 && result.Success == 0 {
 		finalStatus = "failed"
@@ -180,47 +168,55 @@ func (s *SubscriptionService) UpdateNodesBatch(ctx context.Context, ids []uint) 
 }
 
 func (s *SubscriptionService) UpdateNodes(ctx context.Context, id uint) error {
+	start := time.Now()
+
 	sub, err := s.Get(id)
 	if err != nil {
-		s.logger.Error("获取订阅失败", map[string]any{"id": id, "error": err.Error()})
-		return err
+		return s.fail(id, "获取订阅", err, start)
 	}
 
-	body, err := s.fetchContent(ctx, sub.URL, id)
+	body, err := s.fetchContent(ctx, sub.URL)
 	if err != nil {
-		return s.failUpdate(id, "订阅更新失败", err)
+		return s.fail(id, "拉取订阅", err, start)
 	}
 
-	contentHash := s.calculateHash(body)
-	unchanged, err := s.contentUnchanged(sub, contentHash, id)
+	sum := sha256.Sum256(body)
+	hash := hex.EncodeToString(sum[:])
+	if sub.ContentHash == hash {
+		if count, _ := s.nodeRepo.CountBySubscription(id); count > 0 {
+			s.markSuccess(id, sub.Name, "内容未变更", start)
+			return nil
+		}
+	}
+
+	urls := subscription.CleanContent(string(body))
+	parsed, failed := subscription.ParseNodesWithDedup(urls)
+	if len(parsed) == 0 && len(urls) > 0 {
+		return s.fail(id, "解析订阅", fmt.Errorf("%d 个 URL 全部解析失败", len(urls)), start)
+	}
+
+	nodes := make([]*model.Node, 0, len(parsed))
+	for _, n := range parsed {
+		nodes = append(nodes, convertParsedNodeToModel(n))
+	}
+	newNodes, err := s.filterNewNodes(nodes, id)
 	if err != nil {
-		return s.failUpdate(id, "检查订阅内容变更失败", err)
-	}
-	if unchanged {
-		now := time.Now()
-		s.updateSyncStatus(id, "success", &now)
-		return nil
+		return s.fail(id, "读取现有节点", err, start)
 	}
 
-	parsed, err := s.parseWithStats(string(body))
-	if err != nil {
-		return s.failUpdate(id, "解析订阅失败", err)
+	if err := s.repo.SaveNodesAndContentHash(newNodes, id, hash); err != nil {
+		return s.fail(id, "写入节点", err, start)
 	}
 
-	newNodes, err := s.filterNewNodes(parsed.Nodes, id)
-	if err != nil {
-		return s.failUpdate(id, "读取现有节点失败", err)
+	msg := fmt.Sprintf("完成: %d 解析, %d 新增", len(parsed), len(newNodes))
+	if failed > 0 {
+		msg += fmt.Sprintf(", %d 解析失败", failed)
 	}
-	if err := s.repo.SaveNodesAndContentHash(newNodes, id, contentHash); err != nil {
-		return s.failUpdate(id, "写入节点失败", err)
-	}
-
-	now := time.Now()
-	s.updateSyncStatus(id, "success", &now)
+	s.markSuccess(id, sub.Name, msg, start)
 	return nil
 }
 
-func (s *SubscriptionService) fetchContent(ctx context.Context, url string, id uint) ([]byte, error) {
+func (s *SubscriptionService) fetchContent(ctx context.Context, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -240,22 +236,6 @@ func (s *SubscriptionService) fetchContent(ctx context.Context, url string, id u
 	return body, nil
 }
 
-func (s *SubscriptionService) calculateHash(body []byte) string {
-	hash := sha256.Sum256(body)
-	return hex.EncodeToString(hash[:])
-}
-
-func (s *SubscriptionService) contentUnchanged(sub *model.Subscription, contentHash string, id uint) (bool, error) {
-	if sub.ContentHash != "" && sub.ContentHash == contentHash {
-		count, err := s.nodeRepo.CountBySubscription(id)
-		if err != nil {
-			return false, err
-		}
-		return count > 0, nil
-	}
-	return false, nil
-}
-
 func (s *SubscriptionService) updateSyncStatus(id uint, status string, syncedAt *time.Time) {
 	if err := s.repo.UpdateSyncStatus(id, status, syncedAt); err != nil {
 		s.logger.Error("更新订阅同步状态失败", map[string]any{"id": id, "status": status, "error": err.Error()})
@@ -265,7 +245,6 @@ func (s *SubscriptionService) updateSyncStatus(id uint, status string, syncedAt 
 func (s *SubscriptionService) filterNewNodes(nodes []*model.Node, subscriptionID uint) ([]*model.Node, error) {
 	existingKeys, err := s.nodeRepo.FindExistingIdentityKeys(nodes)
 	if err != nil {
-		s.logger.Error("读取现有节点失败", map[string]any{"subscription_id": subscriptionID, "error": err.Error()})
 		return nil, err
 	}
 	var newNodes []*model.Node
@@ -283,21 +262,6 @@ func (s *SubscriptionService) filterNewNodes(nodes []*model.Node, subscriptionID
 		newNodes = append(newNodes, node)
 	}
 	return newNodes, nil
-}
-
-type parseResult struct {
-	Nodes []*model.Node
-	Total int
-}
-
-func (s *SubscriptionService) parseWithStats(content string) (*parseResult, error) {
-	urls := subscription.CleanContent(content)
-	parsedResult := subscription.ParseNodesWithDedup(urls)
-	nodes := make([]*model.Node, 0, len(parsedResult.Nodes))
-	for _, n := range parsedResult.Nodes {
-		nodes = append(nodes, convertParsedNodeToModel(n))
-	}
-	return &parseResult{Nodes: nodes, Total: parsedResult.Total}, nil
 }
 
 func convertParsedNodeToModel(n *types.ParsedNode) *model.Node {

@@ -34,6 +34,9 @@ Base URL: `http://127.0.0.1:10888/api`
 | `subscription_id` | Filter by subscription |
 | `protocol` | Filter by protocol |
 | `keyword` | Filter by name keyword |
+| `latency_statuses` | Filter by latency status (repeatable) |
+| `cursor` | Pagination cursor |
+| `limit` | Page size |
 
 ---
 
@@ -45,11 +48,20 @@ Base URL: `http://127.0.0.1:10888/api`
 | GET | `/xray/runtime` | Get running status |
 | POST | `/xray/runtime/start` | Start Xray |
 | POST | `/xray/runtime/stop` | Stop Xray |
-| POST | `/xray/runtime/restart-best` | Restart with best tested node |
 | GET | `/xray/config` | Get Xray config |
 | GET | `/xray/config/default` | Get default Xray config |
 | PUT | `/xray/config` | Save Xray config |
 | POST | `/xray/speedtest/websites` | Website speed test via Xray proxy |
+
+---
+
+## TUN
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/tun/status` | Get TUN mode status |
+| POST | `/tun/enable` | Enable TUN mode (root xray) |
+| POST | `/tun/disable` | Disable TUN mode |
 
 ---
 

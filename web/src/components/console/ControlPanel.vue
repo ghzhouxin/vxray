@@ -57,12 +57,11 @@
             <Setting />
           </IconButton>
           <IconButton
-            tooltip="轮流测速 (Alt+R)"
+            :tooltip="batchLoading ? '停止轮流测速' : '轮流测速 (Alt+R)'"
             :size="ICON_BUTTON_SIZE_SM"
-            tone="success"
-            :disabled="xrayStore.websiteSpeedTestLoading || speedTestDisabled || batchLoading"
-            :working="batchLoading"
-            @click="$emit('batch-website-speed-test')"
+            :tone="batchLoading ? 'danger' : 'success'"
+            :disabled="xrayStore.websiteSpeedTestLoading || speedTestDisabled"
+            @click="batchLoading ? $emit('cancel-batch-website-speed-test') : $emit('batch-website-speed-test')"
           >
             <Compass />
           </IconButton>
@@ -162,6 +161,7 @@ defineEmits<{
   'toggle-logs': []
   'speed-test': []
   'batch-website-speed-test': []
+  'cancel-batch-website-speed-test': []
   'open-speedtest-targets': []
   'open-subscriptions': []
   'open-xray-config': []

@@ -23,21 +23,25 @@ type XrayService struct {
 	nodeRepo     *repository.NodeRepository
 	cfg          *config.State
 	logger       *TaggedLogger
+	speedTest    *speedtest.SpeedTest
 	tunChecker   func() bool
 	tunDisabler  func() error
 	tunRestarter func() error
 	crashMu      sync.Mutex
 	lastCrashAt  time.Time
+	websiteMu    sync.Mutex
+	websiteTest  bool
 }
 
 const crashRestartWindow = 60 * time.Second
 
 func NewXrayService(nodeRepo *repository.NodeRepository, cfg *config.State, logSvc *LogService, manager *xray.Manager) *XrayService {
 	return &XrayService{
-		manager:  manager,
-		nodeRepo: nodeRepo,
-		cfg:      cfg,
-		logger:   logSvc.NewTaggedLogger(constants.TagXray),
+		manager:   manager,
+		nodeRepo:  nodeRepo,
+		cfg:       cfg,
+		logger:    logSvc.NewTaggedLogger(constants.TagXray),
+		speedTest: speedtest.New(cfg),
 	}
 }
 
@@ -202,32 +206,40 @@ func (s *XrayService) XrayPorts() (*config.XrayPorts, error) {
 	return s.cfg.XrayPorts()
 }
 
+var ErrWebsiteSpeedTestRunning = errors.New("website_speedtest_running")
+
 func (s *XrayService) SpeedTestWebsite(socksPort int) error {
+	s.websiteMu.Lock()
+	if s.websiteTest {
+		s.websiteMu.Unlock()
+		return ErrWebsiteSpeedTestRunning
+	}
+	s.websiteTest = true
+	s.websiteMu.Unlock()
+	defer func() {
+		s.websiteMu.Lock()
+		s.websiteTest = false
+		s.websiteMu.Unlock()
+	}()
+
 	settings := s.cfg.UserSettings()
 	targets := settings.SpeedTest.WebsiteTargets
 	results := make([]config.SpeedTestTarget, len(targets))
-	now := time.Now().Unix()
+	start := time.Now()
+	now := start.Unix()
 
-	st := speedtest.New(s.cfg.UserSettings())
-	const maxConcurrency = 2
-	sem := make(chan struct{}, maxConcurrency)
+	// 网站测速固定小并发：所有 target 经同一活动节点出站，高并发会互相争抢带宽污染延迟值
+	sem := make(chan struct{}, min(len(targets), 4))
 	var wg sync.WaitGroup
 	for i, target := range targets {
 		sem <- struct{}{}
 		wg.Add(1)
 		go func(idx int, t config.SpeedTestTarget) {
 			defer func() {
-				if r := recover(); r != nil {
-					results[idx] = config.SpeedTestTarget{
-						Name: t.Name, URL: t.URL, Icon: t.Icon,
-						Latency: -1, Error: fmt.Sprintf("website speedtest panic: %v", r),
-						TestedAt: now,
-					}
-				}
 				<-sem
 				wg.Done()
 			}()
-			result := st.TestWithProxyAndTarget(socksPort, t.URL)
+			result := s.speedTest.TestWithProxyAndTarget(socksPort, t.URL)
 			results[idx] = config.SpeedTestTarget{
 				Name: t.Name, URL: t.URL, Icon: t.Icon,
 				Latency: result.Latency, Error: result.Error,
@@ -242,5 +254,18 @@ func (s *XrayService) SpeedTestWebsite(socksPort int) error {
 		return fmt.Errorf("persist website speedtest results: %w", err)
 	}
 
+	success, failed := 0, 0
+	for _, r := range results {
+		if r.Error == "" {
+			success++
+		} else {
+			failed++
+		}
+	}
+	s.logger.Info("网站测速完成", map[string]any{
+		"node_id": s.cfg.ActiveNodeID(), "total": len(results),
+		"success": success, "failed": failed,
+		"duration_ms": time.Since(start).Milliseconds(),
+	})
 	return nil
 }

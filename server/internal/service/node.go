@@ -13,11 +13,8 @@ import (
 	"v2ray-server/internal/model"
 	"v2ray-server/internal/repository"
 	"v2ray-server/pkg/speedtest"
-	"v2ray-server/pkg/subscription"
 	"v2ray-server/pkg/types"
 	"v2ray-server/pkg/xray"
-
-	"gorm.io/gorm"
 )
 
 // NodeInfo 是 model.Node 的服务层投影，补充 ProtocolLabel 等派生字段。
@@ -64,12 +61,18 @@ type NodeService struct {
 	speedTest *speedtest.SpeedTest
 	xraySvc   *XrayService
 	cfg       *config.State
-	logSvc    *LogService
+	speedLog  *TaggedLogger
 	speedMu   sync.Mutex
 	speedBus  *ProgressBus
 }
 
 const progressChanBuffer = 100
+
+// speedResultFlushInterval 测速结果增量落库间隔。
+const speedResultFlushInterval = 3 * time.Second
+
+// progressTypeNode 是节点测速进度事件的类型标识。
+const progressTypeNode = "node_speedtest"
 
 type NodeSpeedTestSelection struct {
 	IDs    []uint
@@ -84,63 +87,8 @@ func NewNodeService(xraySvc *XrayService, repo *repository.NodeRepository, cfg *
 		speedTest: speedtest.New(cfg),
 		xraySvc:   xraySvc,
 		cfg:       cfg,
-		logSvc:    logger,
+		speedLog:  logger.NewTaggedLogger(constants.TagSpeedtest),
 	}
-}
-
-// MigrateEmptyTransportNodes re-parses nodes with empty Transport from their stored RawURL.
-// Handles nodes persisted before the Transport refactor so Xray can build valid outbounds.
-func (s *NodeService) MigrateEmptyTransportNodes() error {
-	nodes, err := s.repo.FindByEmptyTransport()
-	if err != nil {
-		return fmt.Errorf("find nodes with empty transport: %w", err)
-	}
-	if len(nodes) == 0 {
-		return nil
-	}
-
-	s.logSvc.Info(constants.TagSubscription, "迁移空 Transport 节点", map[string]any{"count": len(nodes)})
-	migrated, failed := 0, 0
-	for _, node := range nodes {
-		parsed, err := subscription.Parse(node.RawURL)
-		if err != nil {
-			failed++
-			s.logSvc.Info(constants.TagSubscription, "重新解析节点失败，跳过", map[string]any{"id": node.ID, "error": err.Error()})
-			continue
-		}
-		if err := s.repo.UpdateTransport(node.ID, parsed.Transport); err != nil {
-			failed++
-			s.logSvc.Error(constants.TagSubscription, "更新节点 Transport 失败", map[string]any{"id": node.ID, "error": err.Error()})
-			continue
-		}
-		migrated++
-	}
-	s.logSvc.Info(constants.TagSubscription, "Transport 迁移完成", map[string]any{"migrated": migrated, "failed": failed})
-	return nil
-}
-
-// RestoreActiveOutbound 重建活跃节点的 outbound 并更新 config 文件。
-// 用于迁移后修复 stale config 文件，确保 xray 启动时使用正确的 outbound。
-func (s *NodeService) RestoreActiveOutbound() error {
-	activeID := s.cfg.ActiveNodeID()
-	if activeID == 0 {
-		return nil
-	}
-	node, err := s.repo.FindByID(activeID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// 节点已随订阅删除，清空持久化的 active id
-			_ = s.cfg.SetActiveNodeID(0)
-			return nil
-		}
-		return fmt.Errorf("find active node %d: %w", activeID, err)
-	}
-	parsed, err := subscription.Parse(node.RawURL)
-	if err != nil {
-		return fmt.Errorf("parse active node %d: %w", activeID, err)
-	}
-	outbound := xray.BuildOutbound(parsed)
-	return s.cfg.UpdateXrayOutbound(outbound)
 }
 
 func (s *NodeService) List(filter model.NodeFilter) ([]*model.Node, string, error) {
@@ -167,7 +115,7 @@ func (s *NodeService) StartSpeedTestJob(selection NodeSpeedTestSelection) (*Node
 	bus := NewProgressBus()
 	bus.Start()
 	bus.Publish(OperationProgress{
-		Type:    "node_speedtest",
+		Type:    progressTypeNode,
 		Status:  "running",
 		Stage:   "prepare",
 		Message: "准备节点测速",
@@ -218,16 +166,13 @@ func (s *NodeService) SubscribeSpeedTestProgress() (<-chan OperationProgress, fu
 }
 
 func (s *NodeService) runSpeedTestJob(selection NodeSpeedTestSelection, bus *ProgressBus) {
-	var wrappedChan chan speedtest.Progress
+	start := time.Now()
 	defer func() {
 		if r := recover(); r != nil {
-			if wrappedChan != nil {
-				close(wrappedChan)
-			}
 			message := fmt.Sprintf("节点测速异常: %v", r)
-			s.logSvc.Error(constants.TagSpeedtest, "节点测速异常", map[string]any{"error": message})
+			s.speedLog.Error("节点测速异常", map[string]any{"error": message})
 			bus.Publish(OperationProgress{
-				Type:    "node_speedtest",
+				Type:    progressTypeNode,
 				Status:  "failed",
 				Stage:   "panic",
 				Error:   message,
@@ -236,13 +181,22 @@ func (s *NodeService) runSpeedTestJob(selection NodeSpeedTestSelection, bus *Pro
 		}
 	}()
 
-	s.logSvc.Info(constants.TagSpeedtest, "准备节点测速", map[string]any{"ids": selection.IDs, "filter": selection.Filter})
+	by := "filter"
+	if len(selection.IDs) > 0 {
+		by = "ids"
+	}
+	logComplete := func(total, success, failed int) {
+		s.speedLog.Info("节点测速完成", map[string]any{
+			"total": total, "by": by, "success": success, "failed": failed,
+			"duration_ms": time.Since(start).Milliseconds(),
+		})
+	}
 
 	nodes, err := s.resolveSpeedTestNodes(selection)
 	if err != nil {
-		s.logSvc.Error(constants.TagSpeedtest, "节点测速准备失败", map[string]any{"error": err.Error()})
+		s.speedLog.Error("节点测速准备失败", map[string]any{"error": err.Error()})
 		bus.Publish(OperationProgress{
-			Type:    "node_speedtest",
+			Type:    progressTypeNode,
 			Status:  "failed",
 			Stage:   "prepare",
 			Error:   err.Error(),
@@ -252,42 +206,118 @@ func (s *NodeService) runSpeedTestJob(selection NodeSpeedTestSelection, bus *Pro
 	}
 
 	if len(nodes) == 0 {
-		s.logSvc.Info(constants.TagSpeedtest, "当前筛选无可测速节点", map[string]any{"total": 0})
 		bus.Publish(OperationProgress{
-			Type:    "node_speedtest",
+			Type:    progressTypeNode,
 			Status:  "empty",
 			Stage:   "empty",
 			Message: "当前筛选无可测速节点",
 		}, true)
+		logComplete(0, 0, 0)
 		return
 	}
 
-	s.logSvc.Info(constants.TagSpeedtest, "开始节点测速", map[string]any{"total": len(nodes)})
 	bus.Publish(OperationProgress{
-		Type:    "node_speedtest",
+		Type:    progressTypeNode,
 		Status:  "running",
 		Stage:   "start",
 		Total:   len(nodes),
 		Message: "开始节点测速",
 	}, false)
 
-	wrappedChan = s.createJobProgressWrapper(bus)
-	s.speedTest.TestNodes(toSpeedNodes(nodes), wrappedChan)
+	writer := newSpeedResultWriter(s.repo, s.speedLog)
+	defer writer.stopAndWait() // 兜底 panic 路径：完成末次落库
+
+	wrappedChan := s.createJobProgressWrapper(bus)
+	s.speedTest.TestNodes(toSpeedNodes(nodes), wrappedChan, writer.add)
+
+	writer.stopAndWait()
+	success, failed := writer.stats()
+	logComplete(len(nodes), success, failed)
+}
+
+// speedResultWriter 收集测速结果并按固定间隔批量落库：
+// 测速进行中增量写库，保证刷新页面后节点列表排序与统计即时反映已完成结果。
+type speedResultWriter struct {
+	repo   *repository.NodeRepository
+	logger *TaggedLogger
+
+	mu      sync.Mutex
+	pending []repository.LatencyUpdate
+	success int
+	failed  int
+
+	stop     chan struct{}
+	done     chan struct{}
+	stopOnce sync.Once
+}
+
+func newSpeedResultWriter(repo *repository.NodeRepository, logger *TaggedLogger) *speedResultWriter {
+	w := &speedResultWriter{
+		repo:   repo,
+		logger: logger,
+		stop:   make(chan struct{}),
+		done:   make(chan struct{}),
+	}
+	go w.loop()
+	return w
+}
+
+func (w *speedResultWriter) add(r speedtest.Result) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.pending = append(w.pending, repository.LatencyUpdate{ID: r.NodeID, Latency: r.Latency})
+	if r.Error == "" {
+		w.success++
+	} else {
+		w.failed++
+	}
+}
+
+func (w *speedResultWriter) loop() {
+	defer close(w.done)
+	ticker := time.NewTicker(speedResultFlushInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-w.stop:
+			w.flush()
+			return
+		case <-ticker.C:
+			w.flush()
+		}
+	}
+}
+
+func (w *speedResultWriter) flush() {
+	w.mu.Lock()
+	updates := w.pending
+	w.pending = nil
+	w.mu.Unlock()
+	if len(updates) == 0 {
+		return
+	}
+	if err := w.repo.BatchUpdateLatency(updates); err != nil {
+		w.logger.Error("批量更新节点延迟失败", map[string]any{"count": len(updates), "error": err.Error()})
+	}
+}
+
+// stopAndWait 停止后台落库循环并等待末次落库完成（幂等）。
+func (w *speedResultWriter) stopAndWait() {
+	w.stopOnce.Do(func() { close(w.stop) })
+	<-w.done
+}
+
+func (w *speedResultWriter) stats() (success, failed int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.success, w.failed
 }
 
 func (s *NodeService) resolveSpeedTestNodes(selection NodeSpeedTestSelection) ([]*model.Node, error) {
-	ids := uniqueUintIDs(selection.IDs)
-	if len(ids) == 0 {
-		var err error
-		ids, err = s.repo.FindIDsByFilter(selection.Filter)
-		if err != nil {
-			return nil, err
-		}
+	if ids := uniqueUintIDs(selection.IDs); len(ids) > 0 {
+		return s.repo.FindByIDs(ids)
 	}
-	if len(ids) == 0 {
-		return nil, nil
-	}
-	return s.repo.FindByIDs(ids)
+	return s.repo.FindByFilterAll(selection.Filter)
 }
 
 func uniqueUintIDs(ids []uint) []uint {
@@ -313,69 +343,17 @@ func (s *NodeService) createJobProgressWrapper(bus *ProgressBus) chan speedtest.
 	wrappedChan := make(chan speedtest.Progress, progressChanBuffer)
 	go func() {
 		defer func() {
-			if r := recover(); r != nil {
-				message := fmt.Sprintf("节点测速进度处理异常: %v", r)
-				s.logSvc.Error(constants.TagSpeedtest, "节点测速异常", map[string]any{"error": message})
-				bus.Publish(OperationProgress{
-					Type:    "node_speedtest",
-					Status:  "failed",
-					Stage:   "panic",
-					Error:   message,
-					Message: "节点测速异常",
-				}, true)
-				return
-			}
 			// 正常结束：标记总线为终止状态，防止前端刷新后误判为“测速任务恢复中”
 			if last := bus.Last(); last != nil {
 				bus.Publish(*last, true)
 			}
 		}()
 
-		const batchWriteSize = 10
-		pending := make([]repository.LatencyUpdate, 0, batchWriteSize)
-		flush := func() {
-			if len(pending) > 0 {
-				if err := s.repo.BatchUpdateLatency(pending); err != nil {
-					s.logSvc.Error(constants.TagSpeedtest, "批量更新节点延迟失败", map[string]any{"count": len(pending), "error": err.Error()})
-				}
-				pending = pending[:0]
-			}
-		}
-		defer flush()
-
 		for p := range wrappedChan {
-			if p.NodeID > 0 && !p.Testing {
-				pending = append(pending, repository.LatencyUpdate{ID: p.NodeID, Latency: p.Latency})
-				if len(pending) >= batchWriteSize {
-					flush()
-				}
-			}
-
-			status := "running"
-			stage := "node_testing"
-			message := "节点测速中"
-			if !p.Testing {
-				stage = "node_done"
-				message = "节点测速完成"
-			}
-
-			if !p.Testing && p.Total > 0 && p.Completed == p.Total {
-				status = "success"
-				stage = "finished"
-				message = "节点测速完成"
-				if p.Success == 0 && p.Failed > 0 {
-					status = "failed"
-					message = "节点测速失败"
-					s.logSvc.Error(constants.TagSpeedtest, "节点测速失败", speedTestProgressDetail(p))
-				} else {
-					s.logSvc.Info(constants.TagSpeedtest, "节点测速完成", speedTestProgressDetail(p))
-				}
-			}
-
 			bus.Publish(OperationProgress{
-				Type:      "node_speedtest",
-				Status:    status,
-				Stage:     stage,
+				Type:      progressTypeNode,
+				Status:    "running",
+				Stage:     "node_done",
 				Total:     p.Total,
 				Completed: p.Completed,
 				Success:   p.Success,
@@ -383,8 +361,7 @@ func (s *NodeService) createJobProgressWrapper(bus *ProgressBus) chan speedtest.
 				NodeID:    p.NodeID,
 				Latency:   p.Latency,
 				Error:     p.ErrMsg,
-				Message:   message,
-				Testing:   p.Testing,
+				Message:   "节点测速中",
 			}, false)
 		}
 	}()
@@ -396,15 +373,6 @@ func formatOptionalTime(value time.Time) string {
 		return ""
 	}
 	return value.Format(time.RFC3339)
-}
-
-func speedTestProgressDetail(p speedtest.Progress) map[string]any {
-	return map[string]any{
-		"total":     p.Total,
-		"completed": p.Completed,
-		"success":   p.Success,
-		"failed":    p.Failed,
-	}
 }
 
 func ToNodeInfos(nodes []*model.Node) []NodeInfo {
@@ -491,9 +459,16 @@ func (s *NodeService) GetProtocols() []ProtocolOption {
 func toSpeedNodes(nodes []*model.Node) []speedtest.Node {
 	speedNodes := make([]speedtest.Node, len(nodes))
 	for i, n := range nodes {
+		var tlsHost string
+		if tlsCfg := n.Transport.TLS; n.Transport.Security == "tls" && tlsCfg != nil {
+			tlsHost = tlsCfg.ServerName
+		}
 		speedNodes[i] = speedtest.Node{
 			ID:       n.ID,
 			Outbound: xray.BuildOutbound(nodeToParsed(n)),
+			Addr:     n.Address,
+			Port:     n.Port,
+			TLSHost:  tlsHost,
 		}
 	}
 	return speedNodes
@@ -567,4 +542,3 @@ func nodeMatchesKeyword(node *model.Node, keyword string) bool {
 	portStr := strconv.Itoa(node.Port)
 	return portStr == keyword || contains(portStr)
 }
-

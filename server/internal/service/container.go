@@ -53,7 +53,6 @@ func Init(db *gorm.DB, cfg *config.State) (*Container, error) {
 	logSvc := NewLogService(db, paths.XrayLogPath, paths.TunLogPath)
 	subSvc := NewSubscriptionService(db, logSvc, nodeRepo)
 
-	// user / root 双实例：同一 Manager 类型、不同配置身份
 	userMgr := xray.NewManager(xray.Options{
 		Binary:   meta.Binary,
 		AssetDir: paths.GeoDir,
@@ -77,7 +76,6 @@ func Init(db *gorm.DB, cfg *config.State) (*Container, error) {
 			}
 		},
 	})
-	// 清理上次会话残留的孤儿 xray 进程（vxray 异常退出时无人回收）
 	userMgr.CleanupStale()
 	rootMgr.CleanupStale()
 
@@ -93,12 +91,6 @@ func Init(db *gorm.DB, cfg *config.State) (*Container, error) {
 	})
 	geoMgr := geo.NewManager(geoConfig{cfg: cfg})
 
-	if err := nodeSvc.MigrateEmptyTransportNodes(); err != nil {
-		_ = logSvc.Error(constants.TagSubscription, "Transport 迁移失败", map[string]any{"error": err.Error()})
-	}
-	if err := nodeSvc.RestoreActiveOutbound(); err != nil {
-		_ = logSvc.Error(constants.TagXray, "重建活跃节点 outbound 失败", map[string]any{"error": err.Error()})
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &Container{
 		Config:       cfg,

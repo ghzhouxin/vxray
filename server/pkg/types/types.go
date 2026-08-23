@@ -40,11 +40,6 @@ type ParsedNode struct {
 	Transport Transport
 }
 
-type ParseResult struct {
-	Nodes []*ParsedNode
-	Total int
-}
-
 func (n *ParsedNode) IdentityKey() string {
 	var buf bytes.Buffer
 	buf.WriteString(n.Address)

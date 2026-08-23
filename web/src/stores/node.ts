@@ -58,7 +58,7 @@ export const useNodeStore = defineStore('node', () => {
     let lastProgress: OperationProgress | null = null
     await nodeApi.speedTest(payload, progress => {
       lastProgress = progress
-      if (progress.node_id != null && progress.testing === false) {
+      if (progress.node_id != null) {
         updateNodeLatency(progress.node_id, progress.latency)
       }
       onProgress?.(progress)

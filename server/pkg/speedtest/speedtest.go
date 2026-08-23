@@ -40,12 +40,16 @@ type Progress struct {
 	NodeID    uint
 	Latency   int64
 	ErrMsg    string
-	Testing   bool
 }
 
+// Node 携带测速 outbound 与 TCP 预筛所需的结构化字段，
+// 免去从 outbound map 反向解析 addr/port/SNI。
 type Node struct {
 	ID       uint
 	Outbound types.Map
+	Addr     string // 预筛直连地址；空则跳过预筛
+	Port     int
+	TLSHost  string // security==tls 时为 SNI，否则空
 }
 
 type Config interface {
@@ -106,55 +110,86 @@ func (st *SpeedTest) TestWithProxyAndTarget(socksPort int, targetURL string) (re
 	return &Result{Latency: latency}
 }
 
-func (st *SpeedTest) TestNodes(nodes []Node, progressChan chan<- Progress) {
-	if len(nodes) == 0 {
-		if progressChan != nil {
-			close(progressChan)
-		}
-		return
+// testRun 汇总一次批量测速的共享状态：每个节点完成后通过 onResult 交付结果
+// （保证不丢失），进度经 progressChan 有损推送（仅供 UI 展示），
+// done/succ/fail 维护汇总计数。
+type testRun struct {
+	progress chan<- Progress
+	onResult func(Result)
+	total    int
+	done     atomic.Int64
+	succ     atomic.Int64
+	fail     atomic.Int64
+}
+
+// record 交付单节点测速结果并推送进度事件。
+func (r *testRun) record(result Result) {
+	if r.onResult != nil {
+		r.onResult(result)
 	}
 
-	var done, succ, fail atomic.Int64
-	total := len(nodes)
+	p := Progress{
+		Total:     r.total,
+		Completed: int(r.done.Add(1)),
+		NodeID:    result.NodeID,
+		Latency:   result.Latency,
+		ErrMsg:    result.Error,
+	}
+	if result.Error == "" {
+		p.Success = int(r.succ.Add(1))
+		p.Failed = int(r.fail.Load())
+	} else {
+		p.Success = int(r.succ.Load())
+		p.Failed = int(r.fail.Add(1))
+	}
 
-	// 流水线：阶段1 TCP 预筛 → 阶段2 xray 测速
-	// 通过 channel 连接两阶段，阶段1通过的节点立即送入阶段2，无需等待全部预筛完成
-	passedChan := make(chan Node, st.cfg.Concurrency())
-	var prescreenWG sync.WaitGroup
-	prescreenWG.Add(1)
-	go func() {
-		defer prescreenWG.Done()
-		st.tcpPrescreen(nodes, passedChan, progressChan, &done, &succ, &fail, total)
-		close(passedChan)
-	}()
-
-	// 阶段2：从 channel 读取通过预筛的节点，做完整 xray 测速
-	st.testOutbounds(passedChan, progressChan, &done, &succ, &fail, total)
-
-	prescreenWG.Wait()
-	if progressChan != nil {
-		close(progressChan)
+	if r.progress != nil {
+		select {
+		case r.progress <- p:
+		default:
+		}
 	}
 }
 
-// tcpPrescreen 对节点做 TCP+TLS 连通性预筛，通过预筛的节点送入 passedChan。
-// 单节点预算 = 主测速超时 × 3/4，TCP 拨号与 TLS 握手共享该 ctx，
-// 严格保证预筛最差耗时低于主测速超时。
-func (st *SpeedTest) tcpPrescreen(
-	nodes []Node,
-	passedChan chan<- Node,
-	progressChan chan<- Progress,
-	done, succ, fail *atomic.Int64,
-	total int,
-) {
+// TestNodes 并发测速所有节点，每个节点完成后调用 onResult（保证不丢失），
+// 进度事件写入 progressChan（有损，仅供 UI 展示）。
+func (st *SpeedTest) TestNodes(nodes []Node, progressChan chan<- Progress, onResult func(Result)) {
+	defer func() {
+		if progressChan != nil {
+			close(progressChan)
+		}
+	}()
+
+	if len(nodes) == 0 {
+		return
+	}
+	run := &testRun{progress: progressChan, onResult: onResult, total: len(nodes)}
+
+	// 单节点：直接测，跳过预筛（预筛握手与主测速对同一服务器重复）
+	if len(nodes) == 1 {
+		n := nodes[0]
+		run.record(*st.TestOutbound(n.Outbound, n.ID))
+		return
+	}
+
+	// 流水线：阶段1 TCP 预筛 → 阶段2 xray 测速，通过 channel 连接，
+	// 阶段1通过的节点立即送入阶段2，无需等待全部预筛完成
+	passedChan := make(chan Node, st.cfg.Concurrency())
+	go func() {
+		st.tcpPrescreen(nodes, run, passedChan)
+		close(passedChan)
+	}()
+	st.testOutbounds(run, passedChan)
+}
+
+// tcpPrescreen 对节点做 TCP+TLS 连通性预筛，通过的送入 passedChan，失败的记入 run。
+// 预筛预算 = 主测速超时 × 3/4，严格保证预筛最差耗时低于主测速超时。
+func (st *SpeedTest) tcpPrescreen(nodes []Node, run *testRun, passedChan chan<- Node) {
 	const (
 		prescreenFactor = 2
 		maxPrescreen    = 256
 	)
-	concurrency := st.cfg.Concurrency() * prescreenFactor
-	if concurrency > maxPrescreen {
-		concurrency = maxPrescreen
-	}
+	concurrency := min(st.cfg.Concurrency()*prescreenFactor, maxPrescreen)
 	budget := st.cfg.Timeout() * 3 / 4
 
 	var wg sync.WaitGroup
@@ -165,35 +200,10 @@ func (st *SpeedTest) tcpPrescreen(
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			defer func() {
-				if r := recover(); r != nil {
-					sendPrescreenFail(progressChan, n, done, succ, fail, total, fmt.Sprintf("prescreen panic: %v", r))
-				}
-			}()
 
-			addr, port := extractServerAddr(n.Outbound)
-			if addr == "" || port == 0 {
-				passedChan <- n
+			if err := prescreenNode(n, budget); err != nil {
+				run.record(Result{NodeID: n.ID, Latency: -1, Error: err.Error()})
 				return
-			}
-
-			ctx, cancel := context.WithTimeout(context.Background(), budget)
-			defer cancel()
-
-			// defer conn.Close() 统一覆盖 TLS 与非 TLS 路径，避免 fd 泄漏。
-			conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(addr, fmt.Sprintf("%d", port)))
-			if err != nil {
-				sendPrescreenFail(progressChan, n, done, succ, fail, total, fmt.Sprintf("tcp prescreen: %v", err))
-				return
-			}
-			defer conn.Close()
-
-			if sni := extractTLSServerName(n.Outbound); sni != "" {
-				tlsConn := tls.Client(conn, &tls.Config{ServerName: sni, InsecureSkipVerify: true})
-				if err := tlsConn.HandshakeContext(ctx); err != nil {
-					sendPrescreenFail(progressChan, n, done, succ, fail, total, fmt.Sprintf("tls prescreen: %v", err))
-					return
-				}
 			}
 			passedChan <- n
 		}(node)
@@ -201,170 +211,48 @@ func (st *SpeedTest) tcpPrescreen(
 	wg.Wait()
 }
 
-func sendProgress(ch chan<- Progress, p Progress) {
-	if ch == nil {
-		return
-	}
-	select {
-	case ch <- p:
-	default:
-	}
-}
-
-func sendPrescreenFail(progressChan chan<- Progress, n Node, done, succ, fail *atomic.Int64, total int, msg string) {
-	d := done.Add(1)
-	f := fail.Add(1)
-	sendProgress(progressChan, Progress{
-		Total:     total,
-		Completed: int(d),
-		Success:   int(succ.Load()),
-		Failed:    int(f),
-		NodeID:    n.ID,
-		Latency:   -1,
-		ErrMsg:    msg,
-	})
-}
-
-// testOutbounds 从 channel 读取节点做完整 xray 测速。
-func (st *SpeedTest) testOutbounds(
-	passedChan <-chan Node,
-	progressChan chan<- Progress,
-	done, succ, fail *atomic.Int64,
-	total int,
-) {
-	concurrency := st.cfg.Concurrency()
-	if concurrency < 1 {
-		concurrency = 1
-	}
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, concurrency)
-
-	for node := range passedChan {
-		n := node
-		wg.Add(1)
-		go func() {
-			acquired := false
-			finished := false
-			defer func() {
-				if r := recover(); r != nil && !finished {
-					d := done.Add(1)
-					f := fail.Add(1)
-					sendProgress(progressChan, Progress{
-						Total: total, Completed: int(d),
-						Success: int(succ.Load()), Failed: int(f),
-						NodeID: n.ID, Latency: -1,
-						ErrMsg: fmt.Sprintf("speedtest panic: %v", r),
-					})
-				}
-				if acquired {
-					<-sem
-				}
-				wg.Done()
-			}()
-			sem <- struct{}{}
-			acquired = true
-
-			sendProgress(progressChan, Progress{
-				Total:     total,
-				Completed: int(done.Load()),
-				Success:   int(succ.Load()),
-				Failed:    int(fail.Load()),
-				NodeID:    n.ID,
-				Testing:   true,
-			})
-
-			result := st.TestOutbound(n.Outbound, n.ID)
-
-			d := done.Add(1)
-			finished = true
-			if result.Error == "" {
-				s := succ.Add(1)
-				sendProgress(progressChan, Progress{
-					Total: total, Completed: int(d), Success: int(s),
-					Failed: int(fail.Load()), NodeID: result.NodeID,
-					Latency: result.Latency, Testing: false,
-				})
-			} else {
-				f := fail.Add(1)
-				sendProgress(progressChan, Progress{
-					Total: total, Completed: int(d),
-					Success: int(succ.Load()), Failed: int(f),
-					NodeID: result.NodeID,
-					Latency: -1, ErrMsg: result.Error, Testing: false,
-				})
-			}
-		}()
+// prescreenNode 做 TCP+TLS 连通性预筛，通过返回 nil。
+func prescreenNode(n Node, budget time.Duration) error {
+	if n.Addr == "" || n.Port == 0 {
+		return nil
 	}
 
-	wg.Wait()
-}
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
 
-// extractServerAddr 从 outbound config 提取服务器地址和端口。
-// 支持 VLESS/VMess (vnext[0]) 和 Trojan/SS (servers[0]) 两种结构。
-func extractServerAddr(outbound types.Map) (string, int) {
-	settings := asMap(outbound["settings"])
-	if settings == nil {
-		return "", 0
+	// defer conn.Close() 统一覆盖 TLS 与非 TLS 路径，避免 fd 泄漏。
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(n.Addr, fmt.Sprintf("%d", n.Port)))
+	if err != nil {
+		return fmt.Errorf("tcp prescreen: %w", err)
 	}
-	if vnext, ok := settings["vnext"].([]any); ok && len(vnext) > 0 {
-		first := asMap(vnext[0])
-		if first == nil {
-			return "", 0
+	defer conn.Close()
+
+	if n.TLSHost != "" {
+		tlsConn := tls.Client(conn, &tls.Config{ServerName: n.TLSHost, InsecureSkipVerify: true})
+		if err := tlsConn.HandshakeContext(ctx); err != nil {
+			return fmt.Errorf("tls prescreen: %w", err)
 		}
-		addr, _ := first["address"].(string)
-		return addr, toInt(first["port"])
-	}
-	if servers, ok := settings["servers"].([]any); ok && len(servers) > 0 {
-		first := asMap(servers[0])
-		if first == nil {
-			return "", 0
-		}
-		addr, _ := first["address"].(string)
-		return addr, toInt(first["port"])
-	}
-	return "", 0
-}
-
-// extractTLSServerName 从 outbound config 提取 TLS SNI。
-// 仅对 security=="tls" 的节点返回 SNI，其他（none/reality/空）返回空。
-func extractTLSServerName(outbound types.Map) string {
-	streamSettings := asMap(outbound["streamSettings"])
-	if streamSettings == nil {
-		return ""
-	}
-	security, _ := streamSettings["security"].(string)
-	if security != "tls" {
-		return ""
-	}
-	tlsSettings := asMap(streamSettings["tlsSettings"])
-	if tlsSettings == nil {
-		return ""
-	}
-	sni, _ := tlsSettings["serverName"].(string)
-	return sni
-}
-
-// asMap 将 any 转为 map[string]any，兼容 types.Map（named type）和 DB 反序列化的 unnamed type。
-func asMap(v any) map[string]any {
-	switch m := v.(type) {
-	case map[string]any:
-		return m
-	case types.Map:
-		return map[string]any(m)
 	}
 	return nil
 }
 
-func toInt(v any) int {
-	switch n := v.(type) {
-	case int:
-		return n
-	case int64:
-		return int(n)
-	case float64:
-		return int(n)
+// testOutbounds 从 channel 读取通过预筛的节点，做完整 xray 测速，结果记入 run。
+func (st *SpeedTest) testOutbounds(run *testRun, passedChan <-chan Node) {
+	sem := make(chan struct{}, max(st.cfg.Concurrency(), 1))
+
+	var wg sync.WaitGroup
+	for node := range passedChan {
+		n := node
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			run.record(*st.TestOutbound(n.Outbound, n.ID))
+		}()
 	}
-	return 0
+	wg.Wait()
 }
 
 func (st *SpeedTest) getTargetURL() string {

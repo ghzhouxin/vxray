@@ -26,6 +26,7 @@ Commands:
   check        Check debug endpoints
   logs         Tail debug logs
   sudo-setup   Configure passwordless sudo for xray (one-time, for TUN mode)
+  clean-subs   Clear subscription update data (nodes + content_hash + sync status)
 EOF
 }
 
@@ -94,6 +95,19 @@ show_logs() {
   tail -f "$LOG_FILE"
 }
 
+clean_subs() {
+  local db="$DEV_HOME/data/vxray.db"
+  if [ ! -f "$db" ]; then
+    echo "Database not found: $db"
+    exit 1
+  fi
+  sqlite3 "$db" <<'SQL'
+DELETE FROM nodes;
+UPDATE subscriptions SET content_hash = '', last_sync_at = NULL, last_sync_status = '';
+SQL
+  echo "Cleared subscription update data (nodes + content_hash + sync status)."
+}
+
 setup_sudo() {
   XRAY_PATH=$(which xray 2>/dev/null || true)
   if [ -z "$XRAY_PATH" ]; then
@@ -125,6 +139,7 @@ main() {
     check)       check ;;
     logs)        show_logs ;;
     sudo-setup)  setup_sudo ;;
+    clean-subs)  clean_subs ;;
     *)           usage; exit 1 ;;
   esac
 }

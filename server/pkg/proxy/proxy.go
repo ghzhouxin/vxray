@@ -11,11 +11,8 @@ import (
 )
 
 type ProxySettings struct {
-	HTTPHost  string
+	Host      string
 	HTTPPort  int
-	HTTPSHost string
-	HTTPSPort int
-	SOCKSHost string
 	SOCKSPort int
 }
 
@@ -33,11 +30,8 @@ type Manager struct {
 func NewManager(opts Options) *Manager {
 	return &Manager{
 		settings: ProxySettings{
-			HTTPHost:  "127.0.0.1",
+			Host:      "127.0.0.1",
 			HTTPPort:  opts.HTTPPort,
-			HTTPSHost: "127.0.0.1",
-			HTTPSPort: opts.HTTPPort, // HTTPS 与 HTTP 同端口,简化配置
-			SOCKSHost: "127.0.0.1",
 			SOCKSPort: opts.SOCKSPort,
 		},
 	}
@@ -87,9 +81,9 @@ func (m *Manager) setMacOSProxy(settings ProxySettings, enable bool) error {
 	var errs []error
 	for _, s := range services {
 		if enable {
-			runProxyCmd(&errs, "setwebproxy", s, settings.HTTPHost, strconv.Itoa(settings.HTTPPort))
-			runProxyCmd(&errs, "setsecurewebproxy", s, settings.HTTPSHost, strconv.Itoa(settings.HTTPSPort))
-			runProxyCmd(&errs, "setsocksfirewallproxy", s, settings.SOCKSHost, strconv.Itoa(settings.SOCKSPort))
+			runProxyCmd(&errs, "setwebproxy", s, settings.Host, strconv.Itoa(settings.HTTPPort))
+			runProxyCmd(&errs, "setsecurewebproxy", s, settings.Host, strconv.Itoa(settings.HTTPPort))
+			runProxyCmd(&errs, "setsocksfirewallproxy", s, settings.Host, strconv.Itoa(settings.SOCKSPort))
 		}
 		runProxyCmd(&errs, "setwebproxystate", s, state)
 		runProxyCmd(&errs, "setsecurewebproxystate", s, state)

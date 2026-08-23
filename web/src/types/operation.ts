@@ -13,5 +13,4 @@ export interface OperationProgress {
   latency?: number
   error?: string
   message?: string
-  testing?: boolean
 }

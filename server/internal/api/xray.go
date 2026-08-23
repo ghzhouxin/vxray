@@ -1,6 +1,8 @@
 package api
 
 import (
+	"errors"
+
 	"github.com/gin-gonic/gin"
 	"v2ray-server/internal/dto"
 	"v2ray-server/internal/service"
@@ -84,6 +86,10 @@ func (h *XrayHandler) SpeedTestWebsites(c *gin.Context) {
 	}
 
 	if err := h.services.Xray.SpeedTestWebsite(ports.SOCKSPort); err != nil {
+		if errors.Is(err, service.ErrWebsiteSpeedTestRunning) {
+			response.Conflict(c, "网站测速进行中", nil)
+			return
+		}
 		handleError(c, err)
 		return
 	}
