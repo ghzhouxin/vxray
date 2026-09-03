@@ -66,12 +66,11 @@ func bindQuery(c *gin.Context, req any) bool {
 
 func buildNodeFilter(c *gin.Context) model.NodeFilter {
 	return model.NodeFilter{
-		Protocol:        c.Query("protocol"),
-		Keyword:         c.Query("keyword"),
-		LatencyStatuses: c.QueryArray("latency_statuses"),
-		SubscriptionID:  parseUintQuery(c, "subscription_id"),
-		Cursor:          c.Query("cursor"),
-		Limit:           parseIntQuery(c, "limit"),
+		Protocol:       c.Query("protocol"),
+		Keyword:        c.Query("keyword"),
+		SubscriptionID: parseUintQuery(c, "subscription_id"),
+		Cursor:         c.Query("cursor"),
+		Limit:          parseIntQuery(c, "limit"),
 	}
 }
 

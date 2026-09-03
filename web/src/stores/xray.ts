@@ -39,7 +39,8 @@ export const useXrayStore = defineStore('xray', () => {
   // websiteSpeedTestLoading 标识网站测速进行中（区别于节点测速 operationStore.running）。
   const websiteSpeedTestLoading = ref(false)
 
-  async function runWebsiteSpeedTest(): Promise<void> {
+  // speedTestWebsites 与 API 同名：对当前活动节点跑一轮网站测速（后端负责测试与持久化）。
+  async function speedTestWebsites(): Promise<void> {
     await withLoading(websiteSpeedTestLoading, async () => {
       await xrayApi.speedTestWebsites()
     })
@@ -49,6 +50,6 @@ export const useXrayStore = defineStore('xray', () => {
     loading, websiteSpeedTestLoading,
     isRunning, currentNode,
     fetchStatus, startXray, stopXray, applyConsoleSnapshot,
-    runWebsiteSpeedTest
+    speedTestWebsites
   }
 })

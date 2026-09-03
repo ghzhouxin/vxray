@@ -45,9 +45,9 @@
         @toggle-proxy="handleProxyToggle"
         @toggle-tun="handleTunToggle"
         @toggle-logs="toggleLogs"
-        @speed-test="handleSpeedTest"
-        @batch-website-speed-test="handleBatchWebsiteSpeedTest"
-        @cancel-batch-website-speed-test="handleCancelBatchWebsiteSpeedTest"
+        @speed-test="runWebsiteSpeedTest"
+        @batch-website-speed-test="runBatchWebsiteSpeedTest"
+        @cancel-batch-website-speed-test="cancelBatchWebsiteSpeedTest"
         @open-speedtest-targets="openModal('speedTestTargets')"
         @open-subscriptions="openModal('subscriptions')"
         @open-xray-config="openXrayConfigModal"
@@ -149,7 +149,7 @@ import SubscriptionManagerDialog from '@/components/console/SubscriptionManagerD
 import SystemSettingsDialog from '@/components/console/SystemSettingsDialog.vue'
 import XrayConfigDialog from '@/components/console/XrayConfigDialog.vue'
 import { useNodeStore, useOperationStore, useSettingsStore, useXrayStore } from '@/stores'
-import { useAutoRefresh, useConsoleHandlers, useConsoleLogs, useConsoleRefresh, useModalState, useNodeActions, useSpeedTest, useSubscriptionManager, useBatchWebsiteSpeedTest } from '@/composables'
+import { useAutoRefresh, useConsoleHandlers, useConsoleLogs, useConsoleRefresh, useModalState, useNodeActions, useSpeedTest, useSubscriptionManager, useWebsiteSpeedTest } from '@/composables'
 import { STATUS_REFRESH_INTERVAL } from '@/constants'
 import { handleError } from '@/utils/message'
 import type { Node } from '@/types'
@@ -190,7 +190,7 @@ const {
   refreshConsole, refreshNodes, refreshConsoleAndNodes
 } = useConsoleRefresh({ applyLogsSnapshot })
 
-const refreshContext = { refreshConsoleAndNodes }
+const refreshContext = { refreshConsole, refreshConsoleAndNodes }
 
 const {
   speedTestTaskStatus,
@@ -216,9 +216,9 @@ const activeTaskStatus = computed(() => {
 })
 
 const {
-  batchLoading: batchWebsiteSpeedTestLoading, batchProgress: batchWebsiteSpeedTestProgress,
-  runBatch: handleBatchWebsiteSpeedTest, cancelBatch: handleCancelBatchWebsiteSpeedTest
-} = useBatchWebsiteSpeedTest(refreshContext)
+  batchWebsiteSpeedTestLoading, batchWebsiteSpeedTestProgress,
+  runWebsiteSpeedTest, runBatchWebsiteSpeedTest, cancelBatchWebsiteSpeedTest
+} = useWebsiteSpeedTest(refreshContext)
 
 const {
   updatingSubscriptionId, batchUpdating, submitLoading,
@@ -240,10 +240,10 @@ const {
 const selectedNode = ref<Node | null>(null)
 
 const {
-  handlePowerToggle, handleSpeedTest, handleProxyToggle, handleTunToggle,
+  handlePowerToggle, handleProxyToggle, handleTunToggle,
   openSettingsModal, openRuntimeModal, openXrayConfigModal,
   handleSaveUserSettings, handleSaveXrayConfig, handleXrayConfigSaved
-} = useConsoleHandlers({ refreshContext, refreshConsole, openModal })
+} = useConsoleHandlers({ refreshContext, openModal })
 
 function formatTaskNumber(value: number, total: number) {
   if (!total) return '--'
@@ -264,7 +264,7 @@ const onKey = (fn: () => void, disabled?: () => boolean) => (e: KeyboardEvent) =
 onKeyStroke(matchKey('KeyG'), onKey(toggleLogs))
 onKeyStroke(matchKey('KeyT'), onKey(handleRetestTimeout, () => operationStore.running))
 onKeyStroke(matchKey('KeyR'), onKey(
-  () => batchWebsiteSpeedTestLoading.value ? handleCancelBatchWebsiteSpeedTest() : handleBatchWebsiteSpeedTest(),
+  () => batchWebsiteSpeedTestLoading.value ? cancelBatchWebsiteSpeedTest() : runBatchWebsiteSpeedTest(),
   () => xrayStore.websiteSpeedTestLoading || autoSpeedTestPending.value
 ))
 onKeyStroke(matchKey('KeyV'), onKey(handleSpeedTestAvailable, () => operationStore.running))

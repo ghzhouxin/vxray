@@ -76,16 +76,7 @@ func (h *XrayHandler) SpeedTestWebsites(c *gin.Context) {
 		response.BadRequest(c, "xray not running")
 		return
 	}
-	ports, err := h.services.Xray.XrayPorts()
-	if handleError(c, err) {
-		return
-	}
-	if ports.SOCKSPort == 0 {
-		response.BadRequest(c, "no socks port available")
-		return
-	}
-
-	if err := h.services.Xray.SpeedTestWebsite(ports.SOCKSPort); err != nil {
+	if err := h.services.Xray.SpeedTestWebsites(); err != nil {
 		if errors.Is(err, service.ErrWebsiteSpeedTestRunning) {
 			response.Conflict(c, "网站测速进行中", nil)
 			return

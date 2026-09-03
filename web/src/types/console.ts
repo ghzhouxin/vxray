@@ -4,6 +4,7 @@ import type { Subscription } from './subscription'
 import type { TunStatusState } from './tun'
 
 export interface RefreshContext {
+  refreshConsole: () => Promise<void>
   refreshConsoleAndNodes: () => Promise<void>
 }
 

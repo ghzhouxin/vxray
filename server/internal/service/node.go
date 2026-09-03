@@ -519,15 +519,7 @@ func nodeMatchesFilter(node *model.Node, filter model.NodeFilter) bool {
 	if filter.Keyword != "" && !nodeMatchesKeyword(node, filter.Keyword) {
 		return false
 	}
-	if len(filter.LatencyStatuses) == 0 {
-		return true
-	}
-	for _, status := range filter.LatencyStatuses {
-		if constants.LatencyStatus(node.Latency) == status {
-			return true
-		}
-	}
-	return false
+	return true
 }
 
 // nodeMatchesKeyword 调用方保证 node 非 nil、keyword 非空。

@@ -119,7 +119,7 @@ export function useSpeedTest(ctx: RefreshContext) {
     await execute(
       async () => {
         if (!xrayStore.websiteSpeedTestLoading) {
-          await xrayStore.runWebsiteSpeedTest()
+          await xrayStore.speedTestWebsites()
           await settingsStore.fetchConfigView()
         }
       },

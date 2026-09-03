@@ -76,12 +76,11 @@ func Init(db *gorm.DB, cfg *config.State) (*Container, error) {
 			}
 		},
 	})
-	userMgr.CleanupStale()
-	rootMgr.CleanupStale()
+	userMgr.CleanupStale(paths.XrayConfigPath)
+	rootMgr.CleanupStale(paths.TunConfigPath)
 
-	xraySvc := NewXrayService(nodeRepo, cfg, logSvc, userMgr)
 	tunSvc := NewTunService(rootMgr, userMgr, cfg, logSvc)
-	xraySvc.SetTunHandlers(tunSvc.IsEnabled, tunSvc.Disable, tunSvc.RestartRootProcess)
+	xraySvc := NewXrayService(nodeRepo, cfg, logSvc, userMgr, tunSvc)
 	userMgr.SetCrashCallback(xraySvc.handleCrash)
 	rootMgr.SetCrashCallback(tunSvc.handleRootCrash)
 	nodeSvc := NewNodeService(xraySvc, nodeRepo, cfg, logSvc)

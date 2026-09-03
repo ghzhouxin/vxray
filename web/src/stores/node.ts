@@ -19,7 +19,6 @@ export const useNodeStore = defineStore('node', () => {
     if (filter.keyword) result.keyword = filter.keyword
     if (filter.subscriptionId) result.subscriptionId = filter.subscriptionId
     if (filter.protocol) result.protocol = filter.protocol
-    if (filter.latencyStatuses?.length) result.latencyStatuses = filter.latencyStatuses
     return result
   })
 

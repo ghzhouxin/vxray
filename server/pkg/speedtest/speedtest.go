@@ -97,7 +97,8 @@ func (st *SpeedTest) TestOutbound(outbound types.Map, nodeID uint) (result *Resu
 	return &Result{NodeID: nodeID, Latency: latency}
 }
 
-func (st *SpeedTest) TestWithProxyAndTarget(socksPort int, targetURL string) (result *Result) {
+// TestTargetViaProxy 经由运行中 xray 的 socks 端口测速单个目标（网站测速用）。
+func (st *SpeedTest) TestTargetViaProxy(socksPort int, targetURL string) (result *Result) {
 	defer func() {
 		if r := recover(); r != nil {
 			result = &Result{Latency: -1, Error: fmt.Sprintf("website speedtest panic: %v", r)}

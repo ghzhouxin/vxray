@@ -1,23 +1,20 @@
-import { useGeoStore, useNodeStore, useProxyStore, useSettingsStore, useTunStore, useXrayConfigStore, useXrayStore } from '@/stores'
+import { useGeoStore, useProxyStore, useSettingsStore, useTunStore, useXrayConfigStore, useXrayStore } from '@/stores'
 import { useActionExecutor } from './useActionExecutor'
-import { handleError, msg } from '@/utils/message'
-import { NO_AVAILABLE_NODE, SPEED_TEST_FAILED } from '@/constants'
+import { handleError } from '@/utils/message'
 import { ElMessageBox } from 'element-plus'
 import type { RefreshContext } from '@/types'
 import type { ModalName } from './useModalState'
 
 interface ConsoleActionContext {
   refreshContext: RefreshContext
-  refreshConsole: () => Promise<void>
   openModal: (name: ModalName) => void
 }
 
 export function useConsoleHandlers(ctx: ConsoleActionContext) {
   const { execute } = useActionExecutor()
-  const { refreshConsoleAndNodes } = ctx.refreshContext
-  const { refreshConsole, openModal } = ctx
+  const { refreshConsole, refreshConsoleAndNodes } = ctx.refreshContext
+  const { openModal } = ctx
   const xrayStore = useXrayStore()
-  const nodeStore = useNodeStore()
   const proxyStore = useProxyStore()
   const tunStore = useTunStore()
   const settingsStore = useSettingsStore()
@@ -29,31 +26,6 @@ export function useConsoleHandlers(ctx: ConsoleActionContext) {
     await execute(
       async () => { if (stopping) await xrayStore.stopXray(); else await xrayStore.startXray() },
       { refreshAfterAction: refreshConsoleAndNodes, errorMsg: stopping ? '停止失败' : '启动失败' }
-    )
-  }
-
-  async function handleSpeedTest() {
-    if (xrayStore.websiteSpeedTestLoading) { msg.warning('网站测速进行中'); return }
-    if (!xrayStore.isRunning || !xrayStore.currentNode) {
-      const current = xrayStore.currentNode
-      const candidate = current
-        ? nodeStore.nodes.find(n => n.id === current.id)
-        : nodeStore.nodes.find(n => n.latency > 0)
-      if (!candidate) { msg.warning(NO_AVAILABLE_NODE); return }
-      await execute(() => nodeStore.activateNode(candidate.id), {
-        refreshAfterAction: refreshConsoleAndNodes,
-        errorMsg: '激活节点失败'
-      })
-    }
-    await execute(
-      async () => {
-        await xrayStore.runWebsiteSpeedTest()
-        await settingsStore.fetchConfigView()
-      },
-      {
-        refreshAfterAction: refreshConsole,
-        successMsg: '网站测速完成', errorMsg: SPEED_TEST_FAILED
-      }
     )
   }
 
@@ -125,7 +97,6 @@ export function useConsoleHandlers(ctx: ConsoleActionContext) {
 
   return {
     handlePowerToggle,
-    handleSpeedTest,
     handleProxyToggle,
     handleTunToggle,
     openSettingsModal,

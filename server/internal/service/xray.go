@@ -19,47 +19,37 @@ import (
 )
 
 type XrayService struct {
-	manager      *xray.Manager
-	nodeRepo     *repository.NodeRepository
-	cfg          *config.State
-	logger       *TaggedLogger
-	speedTest    *speedtest.SpeedTest
-	tunChecker   func() bool
-	tunDisabler  func() error
-	tunRestarter func() error
-	crashMu      sync.Mutex
-	lastCrashAt  time.Time
-	websiteMu    sync.Mutex
-	websiteTest  bool
+	manager     *xray.Manager
+	nodeRepo    *repository.NodeRepository
+	cfg         *config.State
+	logger      *TaggedLogger
+	speedTest   *speedtest.SpeedTest
+	tun         *TunService // nil = 不支持 TUN（测试环境）
+	crashMu     sync.Mutex
+	lastCrashAt time.Time
+	websiteMu   sync.Mutex
+	websiteTest bool
 }
 
 const crashRestartWindow = 60 * time.Second
 
-func NewXrayService(nodeRepo *repository.NodeRepository, cfg *config.State, logSvc *LogService, manager *xray.Manager) *XrayService {
+func NewXrayService(nodeRepo *repository.NodeRepository, cfg *config.State, logSvc *LogService, manager *xray.Manager, tun *TunService) *XrayService {
 	return &XrayService{
 		manager:   manager,
 		nodeRepo:  nodeRepo,
 		cfg:       cfg,
 		logger:    logSvc.NewTaggedLogger(constants.TagXray),
 		speedTest: speedtest.New(cfg),
+		tun:       tun,
 	}
 }
 
-func (s *XrayService) SetTunHandlers(checker func() bool, disabler, restarter func() error) {
-	s.tunChecker = checker
-	s.tunDisabler = disabler
-	s.tunRestarter = restarter
-}
-
-func (s *XrayService) isTunEnabled() bool {
-	if s.tunChecker == nil {
-		return false
-	}
-	return s.tunChecker()
+func (s *XrayService) tunEnabled() bool {
+	return s.tun != nil && s.tun.IsEnabled()
 }
 
 func (s *XrayService) Start() error {
-	if s.isTunEnabled() {
+	if s.tunEnabled() {
 		return nil
 	}
 	s.logger.Info("启动 Xray", nil)
@@ -74,7 +64,7 @@ func (s *XrayService) Start() error {
 // handleCrash 由 user Manager 崩溃回调触发：
 // 60s 窗口内首次崩溃自动重启一次，再崩只记日志（防循环）；TUN 模式下仅记日志。
 func (s *XrayService) handleCrash() {
-	if s.isTunEnabled() {
+	if s.tunEnabled() {
 		s.logger.Error("用户态 xray 意外退出（TUN 模式，不自动重启）", nil)
 		return
 	}
@@ -94,8 +84,8 @@ func (s *XrayService) handleCrash() {
 }
 
 func (s *XrayService) Stop() error {
-	if s.isTunEnabled() && s.tunDisabler != nil {
-		if err := s.tunDisabler(); err != nil {
+	if s.tunEnabled() {
+		if err := s.tun.Disable(); err != nil {
 			return fmt.Errorf("disable tun before stop xray: %w", err)
 		}
 	}
@@ -108,10 +98,10 @@ func (s *XrayService) Stop() error {
 }
 
 func (s *XrayService) Restart() error {
-	if s.isTunEnabled() && s.tunRestarter != nil {
-		s.logger.Info("重启 root process", nil)
-		if err := s.tunRestarter(); err != nil {
-			s.logger.Error("重启 root process 失败", map[string]any{"error": err.Error()})
+	if s.tunEnabled() {
+		s.logger.Info("重启 root xray", nil)
+		if err := s.tun.restartRoot(); err != nil {
+			s.logger.Error("重启 root xray 失败", map[string]any{"error": err.Error()})
 			return err
 		}
 		return nil
@@ -126,7 +116,7 @@ func (s *XrayService) Restart() error {
 }
 
 func (s *XrayService) Status() bool {
-	return s.manager.Running() || s.isTunEnabled()
+	return s.manager.Running() || s.tunEnabled()
 }
 
 func (s *XrayService) GetConfig() (string, error) { return s.cfg.XrayConfigContent() }
@@ -181,9 +171,9 @@ func (s *XrayService) SetActiveNode(id uint, outbound types.Map) error {
 		s.logger.Error("持久化活动节点失败", map[string]any{"node_id": id, "error": err.Error()})
 	}
 
-	if s.isTunEnabled() && s.tunRestarter != nil {
-		if err := s.tunRestarter(); err != nil {
-			s.logger.Error("切换活动节点失败（重启 root process）", map[string]any{"node_id": id, "error": err.Error()})
+	if s.tunEnabled() {
+		if err := s.tun.restartRoot(); err != nil {
+			s.logger.Error("切换活动节点失败（重启 root xray）", map[string]any{"node_id": id, "error": err.Error()})
 			return err
 		}
 	} else {
@@ -208,7 +198,8 @@ func (s *XrayService) XrayPorts() (*config.XrayPorts, error) {
 
 var ErrWebsiteSpeedTestRunning = errors.New("website_speedtest_running")
 
-func (s *XrayService) SpeedTestWebsite(socksPort int) error {
+// SpeedTestWebsites 对全部网站测速目标经当前活动节点 socks 端口测速并持久化结果。
+func (s *XrayService) SpeedTestWebsites() error {
 	s.websiteMu.Lock()
 	if s.websiteTest {
 		s.websiteMu.Unlock()
@@ -221,6 +212,15 @@ func (s *XrayService) SpeedTestWebsite(socksPort int) error {
 		s.websiteTest = false
 		s.websiteMu.Unlock()
 	}()
+
+	ports, err := s.cfg.XrayPorts()
+	if err != nil {
+		return fmt.Errorf("read xray ports: %w", err)
+	}
+	if ports.SOCKSPort == 0 {
+		return errors.New("no socks port available")
+	}
+	socksPort := ports.SOCKSPort
 
 	settings := s.cfg.UserSettings()
 	targets := settings.SpeedTest.WebsiteTargets
@@ -239,7 +239,7 @@ func (s *XrayService) SpeedTestWebsite(socksPort int) error {
 				<-sem
 				wg.Done()
 			}()
-			result := s.speedTest.TestWithProxyAndTarget(socksPort, t.URL)
+			result := s.speedTest.TestTargetViaProxy(socksPort, t.URL)
 			results[idx] = config.SpeedTestTarget{
 				Name: t.Name, URL: t.URL, Icon: t.Icon,
 				Latency: result.Latency, Error: result.Error,
