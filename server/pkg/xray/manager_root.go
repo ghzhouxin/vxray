@@ -20,41 +20,100 @@ const (
 
 // —— root 模式进程管理 ——
 //
-// sudo 的 use_pty 会把真实 xray 放进独立会话：向 sudo 前端发 SIGTERM 只会让
-// sudo 自身退出、孤儿化 xray（端口仍被占）。故 root 的停止与清理都直接对真实
-// root xray pid 逐 pid `sudo -n /bin/kill`，不依赖 sudo 转发信号。
+// `sudo -n xray run -c <config>` 会 fork 出两个进程：
+//   - sudo 前端：vxray 直系子进程，euid=0（setuid）但 ruid 是普通用户；
+//   - 真实 xray：sudo 子进程，ruid=0，跑 TUN 配置、占用端口。
+//
+// 向 sudo 前端发信号只会让 sudo 退出、孤儿化真实 xray（端口仍被占）。因此停止与
+// 监控只针对真实 xray pid（启动时按 ruid 捕获一次），孤儿清理按 config 路径 rediscover。
 
-// stopRoot 停止 root xray：以真实 xray pid 全部消亡为成功标准。
-func (m *Manager) stopRoot(proc *process.Process) error {
-	if m.configPath == "" {
-		return proc.Stop(stopTimeout)
+// captureRootPID 捕获真实 root xray pid；未捕获到返回 -1。
+func captureRootPID(configPath string) int {
+	if pids := rootPids(configPath); len(pids) == 1 {
+		return pids[0]
 	}
-
-	// 优雅停止：发 TERM，超时不死则强杀，均不济则上报仍存活的真实 pid。
-	if signalRootXrays(m.configPath, "-TERM") && !waitRootGone(m.configPath, rootTermWait) {
-		signalRootXrays(m.configPath, "-9")
-		if !waitRootGone(m.configPath, rootKillWait) {
-			_ = proc.Stop(reapWait)
-			return fmt.Errorf("root xray survived SIGKILL: %v", rootXrayPids(m.configPath))
-		}
-	}
-	// 真实 xray 已死，收尾 sudo 前端
-	return proc.Stop(reapWait)
+	return -1
 }
 
-// cleanupStaleRoot 清理上次会话残留的 root xray：按 configPath 精确匹配真实 pid
-// 逐个 sudo kill，再收尾残留的 sudo 前端。不依赖 pidFile——孤儿场景下 pidFile 可能
-// 已被上一会话 monitor 删除，但 root xray 仍需按 configPath 回收。
+// rootPids 返回匹配 config 的真实 root xray pid。
+// 用 pgrep -U（ruid 匹配）而非 -u（euid 匹配）：sudo 前端 euid=0（setuid）会被
+// -u 误中，-U 只命中 ruid=0 的真实 xray。
+func rootPids(configPath string) []int {
+	out, err := exec.Command("pgrep", "-U", "0", "-f", "xray run -c "+configPath).Output()
+	if err != nil {
+		return nil // pgrep 无匹配时 exit 1，非错误
+	}
+	var pids []int
+	for _, s := range strings.Fields(string(out)) {
+		if pid, err := strconv.Atoi(s); err == nil {
+			pids = append(pids, pid)
+		}
+	}
+	return pids
+}
+
+// rootAlive 用 sudo kill -0 探测 root 进程存活（普通用户 kill(0) 对 uid 0 进程返回 EPERM，不可靠）。
+func rootAlive(pid int) bool {
+	return killRoot(pid, "-0") == nil
+}
+
+// killRoot 以 root 身份对 pid 发信号。
+func killRoot(pid int, sig string) error {
+	return exec.Command("sudo", "-n", "/bin/kill", sig, strconv.Itoa(pid)).Run()
+}
+
+// stopRoot 停止 root xray：以真实 xray pid 消亡为成功标准，再收尾 sudo 前端。
+func (m *Manager) stopRoot(proc *process.Process) error {
+	pid := m.rootPID
+	if pid <= 0 {
+		return reapFrontend(proc, stopTimeout) // 未捕获真实 pid，退化为杀前端
+	}
+	if rootAlive(pid) && !signalRoot(pid, "-TERM", rootTermWait) && !signalRoot(pid, "-9", rootKillWait) {
+		_ = reapFrontend(proc, reapWait)
+		return fmt.Errorf("root xray %d 在 SIGKILL 后仍存活", pid)
+	}
+	return reapFrontend(proc, reapWait)
+}
+
+// signalRoot 发信号并等待真实 pid 消亡：成功标准是 pid 消失，而非 kill 命令返回 0。
+func signalRoot(pid int, sig string, wait time.Duration) bool {
+	_ = killRoot(pid, sig)
+	return waitRootGone(pid, wait)
+}
+
+// reapFrontend 收尾 sudo 前端（proc 为 nil 或已退出时为无害空操作）。
+func reapFrontend(proc *process.Process, timeout time.Duration) error {
+	if proc == nil {
+		return nil
+	}
+	return proc.Stop(timeout)
+}
+
+// waitRootGone 轮询直到 root pid 消失，返回是否在超时内消失。
+func waitRootGone(pid int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for rootAlive(pid) {
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return true
+}
+
+// cleanupStaleRoot 清理上次会话残留的 root xray：按 config 路径 rediscover 真实 pid，
+// TERM → 等待 → KILL 兜底，再收尾残留 sudo 前端。不依赖 pidFile——孤儿场景下 pidFile
+// 可能已被上一会话 monitor 删除。
 func (m *Manager) cleanupStaleRoot(configPath string) {
-	if signalRootXrays(configPath, "-TERM") && !waitRootGone(configPath, staleWait) {
-		signalRootXrays(configPath, "-9")
-		waitRootGone(configPath, staleWait)
+	for _, pid := range rootPids(configPath) {
+		if !signalRoot(pid, "-TERM", staleWait) {
+			_ = killRoot(pid, "-9")
+		}
 	}
 	m.reapStaleFrontend()
 }
 
-// reapStaleFrontend 收尾残留的 sudo 前端（pidFile 记录其 pid）。与 user 模式不同，
-// sudo 前端拿不到 root xray 的进程组，只需 TERM 前端自身即可。
+// reapStaleFrontend 收尾残留 sudo 前端（pidFile 记录其 pid）。
 func (m *Manager) reapStaleFrontend() {
 	if m.opts.PidFile == "" {
 		return
@@ -64,45 +123,4 @@ func (m *Manager) reapStaleFrontend() {
 		waitForExit(pid, staleWait)
 	}
 	_ = os.Remove(m.opts.PidFile)
-}
-
-// signalRootXrays 对匹配 config 的真实 root xray pid 逐个 `sudo -n /bin/kill` 发信号，
-// 返回是否存在过存活 pid。
-func signalRootXrays(configPath, signal string) bool {
-	pids := rootXrayPids(configPath)
-	for _, pid := range pids {
-		_ = exec.Command("sudo", "-n", "/bin/kill", signal, strconv.Itoa(pid)).Run()
-	}
-	return len(pids) > 0
-}
-
-// waitRootGone 轮询直到无匹配真实 root xray pid，返回是否在超时内消失。
-func waitRootGone(configPath string, timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
-	for {
-		if len(rootXrayPids(configPath)) == 0 {
-			return true
-		}
-		if time.Now().After(deadline) {
-			return false
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-}
-
-// rootXrayPids 返回匹配 config 路径的 root 属主 xray 真实 pid。
-// pgrep -u 0 只匹配 uid 0 进程，排除 sudo 前端（普通用户 uid）。
-func rootXrayPids(configPath string) []int {
-	out, err := exec.Command("pgrep", "-u", "0", "-f",
-		"xray run -c "+configPath).Output()
-	if err != nil {
-		return nil // pgrep 无匹配时 exit 1，不是错误
-	}
-	var pids []int
-	for _, s := range strings.Fields(string(out)) {
-		if pid, err := strconv.Atoi(s); err == nil {
-			pids = append(pids, pid)
-		}
-	}
-	return pids
 }

@@ -140,6 +140,7 @@ func (s *TunService) handleRootCrash() {
 		return
 	}
 	s.logger.Error("root xray 意外退出，回退用户态模式", nil)
+	s.waitSocksFree() // 对齐 Disable：等端口释放再恢复 user xray
 	if err := s.user.Start(s.cfg.SystemMeta().Paths.XrayConfigPath); err != nil {
 		s.logger.Error("崩溃回退后恢复用户态 xray 失败", map[string]any{"error": err.Error()})
 	}

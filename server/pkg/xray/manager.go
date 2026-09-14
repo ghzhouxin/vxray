@@ -26,9 +26,7 @@ const (
 type LogCallback func(level, line string)
 
 // Options 固定 Manager 实例身份：user 与 root 是同一 Manager 的两个配置实例。
-// root 模式经 `sudo -n xray run -c <config>` 启动：sudo 会 fork，直接子进程是
-// sudo 前端（用户态），真实的 root xray 是其 uid 0 孙进程。因此 root 的停止与
-// 孤儿清理不能依赖 proc.Stop 转发信号，须按真实 pid 直接 sudo kill（见 manager_root.go）。
+// root 模式经 sudo fork 起真实 xray，停止与孤儿清理按真实 pid 处理（见 manager_root.go）。
 type Options struct {
 	Binary   string
 	AssetDir string
@@ -39,12 +37,12 @@ type Options struct {
 }
 
 type Manager struct {
-	opts       Options
-	proc       *process.Process
-	configPath string // 当前实例配置路径（root 停止按真实 pid 杀）
-	mu         sync.Mutex
-	onCrash    func()
-	stopping   atomic.Bool // true = 主动停止或启动失败，不算崩溃
+	opts     Options
+	proc     *process.Process
+	rootPID  int // root 模式：sudo fork 出的真实 xray pid；<=0 表示未捕获
+	mu       sync.Mutex
+	onCrash  func()
+	stopping atomic.Bool // true = 主动停止或启动失败，不算崩溃
 }
 
 func NewManager(opts Options) *Manager {
@@ -92,13 +90,15 @@ func (m *Manager) Start(configPath string) error {
 		return err
 	}
 	m.proc = proc
-	m.configPath = configPath
 	m.stopping.Store(false)
 
 	if err := m.awaitStartup(proc, configPath); err != nil {
 		m.stopping.Store(true) // 启动失败不算崩溃
 		_ = proc.Stop(stopTimeout)
 		return err
+	}
+	if m.opts.AsRoot {
+		m.rootPID = captureRootPID(configPath) // 真实 xray 就绪后按 ruid 捕获一次
 	}
 
 	if m.opts.PidFile != "" {
@@ -140,10 +140,32 @@ func (m *Manager) awaitStartup(proc *process.Process, configPath string) error {
 	return fmt.Errorf("xray exited during startup")
 }
 
-// monitor 监听进程退出：清理 pidFile，意外退出时触发 onCrash。
-// 代际校验（m.proc == proc）防止 Restart 后旧 monitor 把新进程误判为崩溃。
+// monitor 监听真实进程退出。root 模式轮询捕获的真实 xray pid（sudo 前端退出
+// 不等于真实 xray 停止），user 模式直接等直系子进程退出；随后收尾并触发 onCrash。
 func (m *Manager) monitor(proc *process.Process) {
+	if m.opts.AsRoot {
+		m.monitorRoot(proc)
+		return
+	}
 	<-proc.Exited()
+	m.finish(proc)
+}
+
+// monitorRoot root 模式：轮询真实 xray pid 存活。未捕获到 pid 时退化为等 sudo 前端退出。
+func (m *Manager) monitorRoot(proc *process.Process) {
+	if m.rootPID > 0 {
+		for rootAlive(m.rootPID) {
+			time.Sleep(500 * time.Millisecond)
+		}
+	} else {
+		<-proc.Exited()
+	}
+	m.finish(proc)
+}
+
+// finish 进程退出收尾：清理 pidFile，意外退出（非主动停止）时触发 onCrash。
+// 代际校验（m.proc == proc）防止 Restart 后旧 monitor 把新进程误判为崩溃。
+func (m *Manager) finish(proc *process.Process) {
 	m.removePidFileIf(proc.PID())
 	m.mu.Lock()
 	crash := m.proc == proc && !m.stopping.Load() && m.onCrash != nil
@@ -157,13 +179,14 @@ func (m *Manager) Stop() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if m.opts.AsRoot {
+		m.stopping.Store(true)
+		return m.stopRoot(m.proc)
+	}
 	if m.proc == nil || !m.proc.Running() {
 		return nil
 	}
 	m.stopping.Store(true)
-	if m.opts.AsRoot {
-		return m.stopRoot(m.proc)
-	}
 	return m.proc.Stop(stopTimeout)
 }
 
